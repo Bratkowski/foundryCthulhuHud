@@ -1,12 +1,11 @@
 {
   "id": "cthulhu-hud",
   "title": "Cthulhu player Hud",
-  "type": "module",
   "url": "https://github.com/Bratkowski/foundryCthulhuHud",
   "manifest": "https://raw.githubusercontent.com/Bratkowski/foundryCthulhuHud/main/module.json",
   "download": "https://github.com/Bratkowski/foundryCthulhuHud/archive/refs/heads/main.zip",
   "description": "Hud dla gracza w systemie Call of Cthulhu 7e dla Foundry VTT.",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "authors": [{ "name": "Aleksander Bratkowski" }],
   "compatibility": { "minimum": "12", "verified": "13" },
   "scripts": ["main.js"],

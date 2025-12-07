@@ -6,7 +6,7 @@ Hooks.on("getSceneControlButtons", controls => {
     name: "CthulhuPlayerHud",
     title: "Notes.PlayerHud",
     icon: "fa-solid fa-user",
-    order: Object.keys(controls.tokens.tools).length,
+    order: Object.keys(controls.notes.tools).length,
     button: true,
     visible: true,
     onChange: active => {
