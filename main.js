@@ -1,6 +1,6 @@
 
 Hooks.on("getSceneControlButtons", controls => {
-  controls.tokens.tools.CthulhuPlayerHud  = {
+  controls.notes.tools.CthulhuPlayerHud  = {
     name: "CthulhuPlayerHud",
     title: "Notes.PlayerHud",
     icon: "fa-solid fa-wrench",
