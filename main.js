@@ -1,5 +1,4 @@
 let hudApp = null;
-const actor = game.user.character;
 
 Hooks.on("getSceneControlButtons", controls => {
   controls.notes.tools.CthulhuPlayerHud  = {
@@ -16,6 +15,8 @@ Hooks.on("getSceneControlButtons", controls => {
       } else {
         if (hudApp) hudApp.close();
       }
+
+  const actor = game.user.character;
   if (!actor) {
   console.log("Brak przypisanego aktora!");
   } else {
