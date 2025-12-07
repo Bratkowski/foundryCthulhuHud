@@ -9,6 +9,12 @@ Hooks.on("getSceneControlButtons", controls => {
     visible: true,
     onChange: active => {
   console.log("Kliknięto HUD:", active);
+  if (active) {
+        if (!hudApp) hudApp = new CthulhuHud();
+        hudApp.render(true);
+      } else {
+        if (hudApp) hudApp.close();
+      }
 }
   };
 })
@@ -35,7 +41,7 @@ class CthulhuHud extends Application {
   async _renderInner(data) {
   const div = document.createElement("div");
   div.innerHTML = `
-    div style="padding: 10px;">
+    <div style="padding: 10px;">
     <h2 style="margin:0; font-size: 20px;">Cthulhu HUD</h2>
     <p>${data.message}</p>
     </div>
