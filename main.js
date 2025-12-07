@@ -1,3 +1,4 @@
+let hudApp = null;
 
 Hooks.on("getSceneControlButtons", controls => {
   controls.notes.tools.CthulhuPlayerHud  = {
