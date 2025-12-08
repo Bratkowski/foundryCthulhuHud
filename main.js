@@ -3,7 +3,7 @@ let hudApp = null;
 Hooks.on("getSceneControlButtons", controls => {
   controls.notes.tools.CthulhuPlayerHud  = {
     name: "CthulhuPlayerHud",
-    title: "Notes.PlayerHud",
+    title: "Najważnieszje staty",
     icon: "fa-solid fa-user",
     order: Object.keys(controls.notes.tools).length,
     button: true,
@@ -94,8 +94,8 @@ getData() {
 
   activateListeners(html) {
   super.activateListeners(html);
-      // html to jQuery; html[0] to root .window-app
-  const rootEl = html[0];
+  // this.element to jQuery owijające .window-app (główny kontener okna)
+  const rootEl = this.element[0];
 
   // start: zwinięty
   rootEl.classList.add("collapsed");

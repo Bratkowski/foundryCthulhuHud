@@ -6,13 +6,10 @@
   width: auto;
   background: transparent;
   box-shadow: none;
-  border: none;
-  pointer-events: none; /* żeby okno nie blokowało mapy poza paskiem */
-}
-
-/* chowamy klasyczny nagłówek Foundry */
-.cthulhu-hud-window .window-header {
-  display: none;
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  border: 2px solid #444;
+  border-radius: 8px;
 }
 
 /* główny kontener HUD – to będzie jedyna klikalna rzecz */
