@@ -54,7 +54,7 @@ class CthulhuHud extends Application {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "cthulhu-hud",
       title: "Cthulhu HUD",
-      template: null,               // Na razie nie używamy osobnego HTML-a
+      template: "modules/cthulhu-hud/templates/hud.html",
       popOut: true,                 // okno oderwane typu popup
       width: 1200,
       height: "auto",
@@ -66,17 +66,6 @@ class CthulhuHud extends Application {
     return {
       message: "HUD działa!"
     };
-  }
-  
-  async _renderInner(data) {
-  const div = document.createElement("div");
-  div.innerHTML = `
-    <div style="padding: 10px;">
-    <h2 style="margin:0; font-size: 20px;">Cthulhu HUD</h2>
-    <p>${data.message}</p>
-    </div>
-    `;
-  return div;
   }
 
   activateListeners(html) {
