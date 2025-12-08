@@ -72,35 +72,37 @@ class CthulhuHud extends Application {
   }
 
 getData() {
-let characters;
+  let characters;
 
-if (game.user.isGM) {
-      // MG – wszyscy badacze typu "character" z właścicielem
-      characters = game.actors.filter(a => a.type === "character" && a.hasPlayerOwner);
-    } else {
-      // gracz – tylko jego postać
-      const userChar = game.user.character;
-      characters = userChar ? [userChar] : [];
-    }
+  if (game.user.isGM) {
+    // MG – wszyscy badacze typu "character" z właścicielem
+    characters = game.actors.filter(a => a.type === "character" && a.hasPlayerOwner);
+  } else {
+    // gracz – tylko jego postać
+    const userChar = game.user.character;
+    characters = userChar ? [userChar] : [];
+  }
 
-    // jeśli nic nie jest wybrane, a lista nie jest pusta → wybierz pierwszego
-    if (!this.selectedActorId && characters.length > 0) {
-      this.selectedActorId = characters[0].id;
-    }
+  // jeśli nic nie jest wybrane, a lista nie jest pusta → wybierz pierwszego
+  if (!this.selectedActorId && characters.length > 0) {
+    this.selectedActorId = characters[0].id;
+  }
 
-    // wybrany aktor (albo pierwszy z listy)
-    const actor = characters.find(a => a.id === this.selectedActorId) ?? characters[0];
+  // wybrany aktor (albo pierwszy z listy)
+  const actor = characters.find(a => a.id === this.selectedActorId) ?? characters[0];
 
-    // lista do paska portretów
-    const actorTabs = characters.map(a => ({
-      id: a.id,
-      name: a.name,
-      portrait: a.img || (a.prototypeToken?.texture?.src ?? ""),
-      isSelected: a.id === this.selectedActorId
-    }));
+  // lista do paska portretów
+  const actorTabs = characters.map(a => ({
+    id: a.id,
+    name: a.name,
+    portrait: a.img || (a.prototypeToken?.texture?.src ?? ""),
+    isSelected: a.id === this.selectedActorId
+  }));
 
+  // jeśli z jakiegoś powodu nie ma aktora
   if (!actor) {
     return {
+      actors: actorTabs,
       name: "Brak postaci",
       hpValue: 0,
       hpMax: 0,
@@ -109,12 +111,13 @@ if (game.user.isGM) {
       luckValue: 0,
       mpValue: 0,
       mpMax: 0,
-      cashValue: 0,
-      portrait: null
+      cashValue: 0
     };
   }
 
+  // normalny przypadek
   return {
+    actors: actorTabs,  // ← NAJWAŻNIEJSZE
     name: actor.name,
     hpValue: actor.system.attribs.hp.value,
     hpMax: actor.system.attribs.hp.max,
@@ -123,41 +126,15 @@ if (game.user.isGM) {
     luckValue: actor.system.attribs.lck.value,
     mpValue: actor.system.attribs.mp.value,
     mpMax: actor.system.attribs.mp.max,
-    cashValue: actor.system.monetary.cash,
-    portrait: actor.prototypeToken.texture.src
+    cashValue: actor.system.monetary.cash
   };
 }
+
 
 activateListeners(html) {
   super.activateListeners(html);
 
-  // ==========================
-  // 1. ZWIJANIE / ROZWIJANIE HUDU
-  // ==========================
-
-  const rootEl = this.element[0];
-
-  // Start: okno jest zwinięte
-  if (!rootEl.classList.contains("collapsed") && 
-      !rootEl.classList.contains("expanded")) {
-    rootEl.classList.add("collapsed");
-  }
-
-  // Kliknięcie w zakładkę HUD (tylko jeśli taka istnieje)
-  html.find(".cthulhu-hud-tab").on("click", () => {
-    if (rootEl.classList.contains("collapsed")) {
-      rootEl.classList.remove("collapsed");
-      rootEl.classList.add("expanded");
-    } else {
-      rootEl.classList.remove("expanded");
-      rootEl.classList.add("collapsed");
-    }
-  });
-
-  // ==============================
-  // 2. Wybór aktora (portrety MG)
-  // ==============================
-
+  // === TYLKO wybór aktora (portrety MG) ===
   html.find(".hud-actor-tab").on("click", ev => {
     const id = ev.currentTarget.dataset.actorId;
     if (!id || id === this.selectedActorId) return;
@@ -166,6 +143,7 @@ activateListeners(html) {
     this.render(false); // przeładuj HUD, zostawiając to samo okno
   });
 }
+
 
 
 }
