@@ -1,5 +1,11 @@
 let hudApp = null;
 
+// Automatyczny refresh HUD-u gdy jakikolwiek aktor się zmienia
+Hooks.on("updateActor", (actor, data) => {
+  if (hudApp) hudApp.render(false);
+});
+
+
 Hooks.on("getSceneControlButtons", controls => {
   controls.notes.tools.CthulhuPlayerHud  = {
     name: "CthulhuPlayerHud",
@@ -95,7 +101,7 @@ getData() {
   const actorTabs = characters.map(a => ({
     id: a.id,
     name: a.name,
-    portrait: a.img || (a.prototypeToken?.texture?.src ?? ""),
+    portrait: a.img || (a.prototypeToken.texture.src),
     isSelected: a.id === this.selectedActorId
   }));
 
