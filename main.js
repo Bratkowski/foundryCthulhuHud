@@ -63,8 +63,16 @@ class CthulhuHud extends Application {
   }
 
   getData() {
+  const actor = game.user.character;
     return {
-      message: "HUD działa!"
+      name: actor.name,
+      hpValue: actor.system.attribs.hp.value,
+      hpMax: actor.system.attribs.hp.max,
+      sanValue: actor.system.attribs.san.value,
+      sanMax: actor.system.attribs.san.max,
+      luckValue: actor.system.attribs.lck.value,
+      mpValue: actor.system.attribs.mp.value,
+      mpMax: actor.system.attribs.mp.max
     };
   }
 
