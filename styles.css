@@ -4,3 +4,14 @@
   border: 2px solid #444;
   border-radius: 8px;
 }
+
+/* zawartość HUDa */
+.cthulhu-hud-content {
+  padding: 8px;
+}
+
+/* linie statystyk */
+.cthulhu-hud-window .hud-stat {
+  font-size: 14px;
+  margin: 2px 0;
+}
