@@ -1,13 +1,12 @@
 <div class="cthulhu-hud-root">
 
-  <!-- Zakładka do klikania (widoczna nawet w stanie złożonym) -->
-  <div class="cthulhu-hud-tab">
-  {{#if portrait}}
-    <img src="{{portrait}}" alt="{{name}}" class="hud-portrait">
-  {{else}}
-    HUD
-  {{/if}}
-  </div>
+<div class="hud-actors-row">
+  {{#each actors}}
+    <div class="hud-actor-tab {{#if isSelected}}is-active{{/if}}" data-actor-id="{{id}}">
+      <img src="{{portrait}}" alt="{{name}}" class="hud-portrait">
+    </div>
+  {{/each}}
+</div>
 
   <!-- Zawartość, która się „rozwija” -->
   <div class="cthulhu-hud-strip">

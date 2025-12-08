@@ -50,6 +50,15 @@ console.log("MP:", actor.system.attribs.mp.value, "/", actor.system.attribs.mp.m
 })
 
 class CthulhuHud extends Application {
+
+    // 1) NOWE: konstruktor – stan: który aktor jest wybrany
+  constructor(...args) {
+    super(...args);
+
+    const userChar = game.user.character;
+    this.selectedActorId = userChar ? userChar.id : null;
+  }
+
     static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
       id: "cthulhu-hud",
@@ -63,7 +72,33 @@ class CthulhuHud extends Application {
   }
 
 getData() {
-  const actor = game.user.character;
+let characters;
+
+if (game.user.isGM) {
+      // MG – wszyscy badacze typu "character" z właścicielem
+      characters = game.actors.filter(a => a.type === "character" && a.hasPlayerOwner);
+    } else {
+      // gracz – tylko jego postać
+      const userChar = game.user.character;
+      characters = userChar ? [userChar] : [];
+    }
+
+    // jeśli nic nie jest wybrane, a lista nie jest pusta → wybierz pierwszego
+    if (!this.selectedActorId && characters.length > 0) {
+      this.selectedActorId = characters[0].id;
+    }
+
+    // wybrany aktor (albo pierwszy z listy)
+    const actor = characters.find(a => a.id === this.selectedActorId) ?? characters[0];
+
+    // lista do paska portretów
+    const actorTabs = characters.map(a => ({
+      id: a.id,
+      name: a.name,
+      portrait: a.img || (a.prototypeToken?.texture?.src ?? ""),
+      isSelected: a.id === this.selectedActorId
+    }));
+
   if (!actor) {
     return {
       name: "Brak postaci",
@@ -93,15 +128,22 @@ getData() {
   };
 }
 
-
-  activateListeners(html) {
+activateListeners(html) {
   super.activateListeners(html);
-  // this.element to jQuery owijające .window-app (główny kontener okna)
+
+  // ==========================
+  // 1. ZWIJANIE / ROZWIJANIE HUDU
+  // ==========================
+
   const rootEl = this.element[0];
 
-  // start: zwinięty
-  rootEl.classList.add("collapsed");
+  // Start: okno jest zwinięte
+  if (!rootEl.classList.contains("collapsed") && 
+      !rootEl.classList.contains("expanded")) {
+    rootEl.classList.add("collapsed");
+  }
 
+  // Kliknięcie w zakładkę HUD (tylko jeśli taka istnieje)
   html.find(".cthulhu-hud-tab").on("click", () => {
     if (rootEl.classList.contains("collapsed")) {
       rootEl.classList.remove("collapsed");
@@ -111,6 +153,20 @@ getData() {
       rootEl.classList.add("collapsed");
     }
   });
-  }
+
+  // ==============================
+  // 2. Wybór aktora (portrety MG)
+  // ==============================
+
+  html.find(".hud-actor-tab").on("click", ev => {
+    const id = ev.currentTarget.dataset.actorId;
+    if (!id || id === this.selectedActorId) return;
+
+    this.selectedActorId = id;
+    this.render(false); // przeładuj HUD, zostawiając to samo okno
+  });
+}
+
+
 }
 ;
