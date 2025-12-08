@@ -2,7 +2,11 @@
 
   <!-- Zakładka do klikania (widoczna nawet w stanie złożonym) -->
   <div class="cthulhu-hud-tab">
-    Najważnieszje staty
+  {{#if portrait}}
+    <img src="{{portrait}}" alt="{{name}}" class="hud-portrait">
+  {{else}}
+    HUD
+  {{/if}}
   </div>
 
   <!-- Zawartość, która się „rozwija” -->
@@ -19,7 +23,7 @@
       <div class="hud-box hud-box-mp">
         <div class="hud-box-label">PM</div>
         <div class="hud-box-top">{{mpValue}}</div>
-        <div class="hud-box-bottom">{{mpMax}}</div>mpMax
+        <div class="hud-box-bottom">{{mpMax}}</div>
       </div>
 
       <div class="hud-box hud-box-luck">

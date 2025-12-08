@@ -5,7 +5,7 @@
   "manifest": "https://raw.githubusercontent.com/Bratkowski/foundryCthulhuHud/main/module.json",
   "download": "https://github.com/Bratkowski/foundryCthulhuHud/archive/refs/heads/main.zip",
   "description": "Hud dla gracza w systemie Call of Cthulhu 7e dla Foundry VTT.",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "authors": [{ "name": "Aleksander Bratkowski" }],
   "compatibility": { "minimum": "12", "verified": "13" },
   "scripts": ["main.js"],

@@ -74,7 +74,8 @@ getData() {
       luckValue: 0,
       mpValue: 0,
       mpMax: 0,
-      cashValue: 0
+      cashValue: 0,
+      portrait: null
     };
   }
 
@@ -87,7 +88,8 @@ getData() {
     luckValue: actor.system.attribs.lck.value,
     mpValue: actor.system.attribs.mp.value,
     mpMax: actor.system.attribs.mp.max,
-    cashValue: actor.system.monetary.cash
+    cashValue: actor.system.monetary.cash,
+    portrait: actor.prototypeToken.texture.src
   };
 }
 
