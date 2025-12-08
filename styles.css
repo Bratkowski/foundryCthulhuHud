@@ -20,19 +20,7 @@
 }
 
 
-/* portret postacie */
-.cthulhu-hud-tab {
-  background: #4b2a7a;
-  color: #fff;
-  font-weight: bold;
-  padding: 2px 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cthulhu-hud-tab .hud-portrait {
+.hud-portrait {
   width: 70px;
   height: 100px;
   object-fit: cover;   /* przycina, zamiast rozciągać */
