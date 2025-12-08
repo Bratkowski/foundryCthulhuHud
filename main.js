@@ -134,15 +134,33 @@ getData() {
 activateListeners(html) {
   super.activateListeners(html);
 
-  // === TYLKO wybór aktora (portrety MG) ===
+  const rootEl = this.element[0];
+
+  // Pierwsze renderowanie: start jako "collapsed"
+  if (!rootEl.classList.contains("collapsed") &&
+      !rootEl.classList.contains("expanded")) {
+    rootEl.classList.add("collapsed");
+  }
+
+  // Kliknięcie portretu:
+  // - zmiana aktora
+  // - rozwinięcie HUD-u
   html.find(".hud-actor-tab").on("click", ev => {
     const id = ev.currentTarget.dataset.actorId;
-    if (!id || id === this.selectedActorId) return;
+    if (!id) return;
 
-    this.selectedActorId = id;
-    this.render(false); // przeładuj HUD, zostawiając to samo okno
+    // zmiana wybranego aktora
+    if (id !== this.selectedActorId) {
+      this.selectedActorId = id;
+      this.render(false);
+    }
+
+    // rozwiń HUD (jeśli jest złożony)
+    rootEl.classList.remove("collapsed");
+    rootEl.classList.add("expanded");
   });
 }
+
 
 
 

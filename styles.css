@@ -33,9 +33,8 @@
 }
 
 .cthulhu-hud-tab .hud-portrait {
-  width: 60px;
-  height: 60px;
-  border-radius: none;
+  width: 70px;
+  height: 100px;
   object-fit: cover;   /* przycina, zamiast rozciągać */
   display: block;
 }
@@ -64,6 +63,24 @@
 .cthulhu-hud-window.expanded .cthulhu-hud-strip {
   max-width: 600px;
   opacity: 1;
+}
+
+.hud-actors-row {
+  display: flex;
+  flex-direction: row;   /* ← ważne: rząd, nie kolumna */
+  gap: 6px;
+  padding: 8px;
+  background: #222;
+}
+
+.hud-actor-tab {
+  cursor: pointer;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hud-actor-tab.is-active {
+  outline: 2px solid #fff;
 }
 
 /* ładna animacja */
@@ -99,6 +116,26 @@
   color: #111;
   padding: 2px 0;
 }
+
+/* domyślnie pokażemy, ale klasy poniżej to nadpiszą */
+.cthulhu-hud-strip {
+  transition: max-height 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+/* zwinięty HUD */
+.cthulhu-hud-window.collapsed .cthulhu-hud-strip {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding-top: 0;
+}
+
+/* rozwinięty HUD */
+.cthulhu-hud-window.expanded .cthulhu-hud-strip {
+  max-height: 500px; /* wystarczająco duże, żeby wszystko się zmieściło */
+  opacity: 1;
+}
+
 
 /* dolna część boksa (aktualna wartość) */
 .hud-box-bottom {
