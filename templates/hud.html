@@ -1,8 +1,45 @@
-<div class="cthulhu-hud-content">
-  <h2>{{name}}</h2>
+<div class="cthulhu-hud-root">
 
-  <div class="hud-stat">HP: {{hpValue}} / {{hpMax}}</div>
-  <div class="hud-stat">SAN: {{sanValue}} / {{sanMax}}</div>
-  <div class="hud-stat">Luck: {{luckValue}}</div>
-  <div class="hud-stat">MP: {{mpValue}} / {{mpMax}}</div>
+  <!-- Zakładka do klikania (widoczna nawet w stanie złożonym) -->
+  <div class="cthulhu-hud-tab">
+    HUD
+  </div>
+
+  <!-- Zawartość, która się „rozwija” -->
+  <div class="cthulhu-hud-strip">
+    <div class="hud-name">{{name}}</div>
+
+    <div class="hud-stats-row">
+      <div class="hud-box hud-box-hp">
+        <div class="hud-box-label">PW</div>
+        <div class="hud-box-top">{{hpMax}}</div>
+        <div class="hud-box-bottom">{{hpValue}}</div>
+      </div>
+
+      <div class="hud-box hud-box-mp">
+        <div class="hud-box-label">PM</div>
+        <div class="hud-box-top">{{mpMax}}</div>
+        <div class="hud-box-bottom">{{mpValue}}</div>
+      </div>
+
+      <div class="hud-box hud-box-luck">
+        <div class="hud-box-label">Sz</div>
+        <div class="hud-box-top">{{luckValue}}</div>
+        <div class="hud-box-bottom">99</div> <!-- tu potem wstawimy max jeśli będziesz chciał -->
+      </div>
+
+      <div class="hud-box hud-box-san">
+        <div class="hud-box-label">PP</div>
+        <div class="hud-box-top">{{sanMax}}</div>
+        <div class="hud-box-bottom">{{sanValue}}</div>
+      </div>
+
+      <div class="hud-box hud-box-cash">
+        <div class="hud-box-label">$</div>
+        <div class="hud-box-top">Gotówka</div>
+        <div class="hud-box-bottom">{{cashValue}}</div>
+      </div>
+    </div>
+  </div>
+
 </div>

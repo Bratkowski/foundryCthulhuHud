@@ -56,29 +56,59 @@ class CthulhuHud extends Application {
       title: "Cthulhu HUD",
       template: "modules/cthulhu-hud/templates/hud.html",
       popOut: true,                 // okno oderwane typu popup
-      width: 1200,
+      width: 600,
       height: "auto",
       classes: ["cthulhu-hud-window"]
     });
   }
 
-  getData() {
+getData() {
   const actor = game.user.character;
+  if (!actor) {
     return {
-      name: actor.name,
-      hpValue: actor.system.attribs.hp.value,
-      hpMax: actor.system.attribs.hp.max,
-      sanValue: actor.system.attribs.san.value,
-      sanMax: actor.system.attribs.san.max,
-      luckValue: actor.system.attribs.lck.value,
-      mpValue: actor.system.attribs.mp.value,
-      mpMax: actor.system.attribs.mp.max
+      name: "Brak postaci",
+      hpValue: 0,
+      hpMax: 0,
+      sanValue: 0,
+      sanMax: 0,
+      luckValue: 0,
+      mpValue: 0,
+      mpMax: 0,
+      cashValue: 0
     };
   }
 
+  return {
+    name: actor.name,
+    hpValue: actor.system.attribs.hp.value,
+    hpMax: actor.system.attribs.hp.max,
+    sanValue: actor.system.attribs.san.value,
+    sanMax: actor.system.attribs.san.max,
+    luckValue: actor.system.attribs.lck.value,
+    mpValue: actor.system.attribs.mp.value,
+    mpMax: actor.system.attribs.mp.max,
+    cashValue: actor.system.monetary.cash
+  };
+}
+
+
   activateListeners(html) {
   super.activateListeners(html);
-    // tu dodasz kliknięcia później
+      // html to jQuery; html[0] to root .window-app
+  const rootEl = html[0];
+
+  // start: zwinięty
+  rootEl.classList.add("collapsed");
+
+  html.find(".cthulhu-hud-tab").on("click", () => {
+    if (rootEl.classList.contains("collapsed")) {
+      rootEl.classList.remove("collapsed");
+      rootEl.classList.add("expanded");
+    } else {
+      rootEl.classList.remove("expanded");
+      rootEl.classList.add("collapsed");
+    }
+  });
   }
 }
 ;
