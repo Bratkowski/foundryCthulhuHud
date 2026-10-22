@@ -61,7 +61,7 @@ function fixture() {
   const a = new FakeActor("A");
   const b = new FakeActor("B", "vehicle");
   const userFlags = {};
-  globalThis.calls = { actor: [], macro: [], roll: [], warnings: [] };
+  globalThis.calls = { actor: [], macro: [], roll: [], warnings: [], itemCreates: [] };
   globalThis.game = {
     actors: new Collection([[a.id, a], [b.id, b]]), items: new Collection(), scenes: new Collection(),
     settings: { get: () => settings },
@@ -76,7 +76,15 @@ function fixture() {
     } } }
   };
   globalThis.ui = { notifications: { warn: message => calls.warnings.push(message), error: () => {} } };
-  globalThis.CONFIG = { Actor: { documentClass: FakeActor } };
+  globalThis.CONFIG = {
+    Actor: { documentClass: FakeActor },
+    Item: { documentClass: {
+      async createDocuments(rows, operation) {
+        calls.itemCreates.push({ rows, parent: operation.parent });
+        return FakeActor.prototype.createEmbeddedDocuments.call(operation.parent, "Item", rows);
+      }
+    } }
+  };
   globalThis.ChatMessage = { getSpeaker: () => ({ actor: a.id }), getSpeakerActor: speaker => game.actors.get(speaker.actor) };
   globalThis.foundry = { utils: { randomID: () => `section${++serial}`, mergeObject: (a, b) => ({ ...a, ...b }) } };
   globalThis.fromUuid = async uuid => {
@@ -314,6 +322,63 @@ const cases = [
     makeItem(b, "destinationSkill", "Pistolety", "skill");
     await dropItem({ type: "Item", uuid: returned.uuid }, { actorUuid: b.uuid, sectionId: "carried" });
     assert.equal(b.items.find(item => item.type === "weapon").system.skill.main.id, "destinationSkill");
+  }],
+  ["weapon transfers avoid CoC7 automatic skill import for both characters and vehicles", async ({ a }) => {
+    makeItem(a, "sourceSkill", "Pistolety", "skill");
+    for (const type of ["character", "vehicle"]) {
+      const destination = new FakeActor(`target-${type}`, type);
+      game.actors.set(destination.id, destination);
+      destination.system.schema = { getField: () => undefined };
+      // CoC7 8.16 prepares weapons by importing skills, then parsedValues reads schema keys.
+      destination.createEmbeddedDocuments = async (documentName, rows) => {
+        if (rows.some(row => row.type === "weapon")) {
+          return destination.system.schema.getField("characteristics").keys();
+        }
+        return FakeActor.prototype.createEmbeddedDocuments.call(destination, documentName, rows);
+      };
+      if (type === "character") makeItem(destination, "targetSkill", "Pistolety", "skill");
+      const weapon = makeItem(a, `weapon-${type}`, "Rewolwer", "weapon", {
+        skill: { main: { id: "sourceSkill", name: "Pistolety" }, alternativ: { id: "", name: "" } },
+        ammo: 3, bullets: 6, range: { normal: { damage: "1d10" } }
+      });
+      await assert.rejects(destination.createEmbeddedDocuments("Item", [weapon.toObject()]), /reading 'keys'/);
+      await dropItem({ type: "Item", uuid: weapon.uuid }, { actorUuid: destination.uuid, sectionId: "carried" });
+      const moved = destination.items.find(item => item.type === "weapon");
+      assert.ok(moved);
+      assert.equal(a.items.has(weapon.id), false);
+      assert.equal(moved.system.ammo, 3);
+      assert.equal(moved.system.bullets, 6);
+      assert.equal(moved.system.range.normal.damage, "1d10");
+      assert.equal(moved.system.skill.main.name, "Pistolety");
+      assert.equal(moved.system.skill.main.id, type === "character" ? "targetSkill" : "");
+      assert.equal(calls.itemCreates.at(-1).parent, destination);
+      assert.equal(calls.itemCreates.at(-1).rows[0]._id, undefined);
+      assert.equal(destination.items.filter(item => item.type === "skill").length, type === "character" ? 1 : 0);
+    }
+  }],
+  ["weapon transfer without a matching skill does not create a skill on the target", async ({ a }) => {
+    const target = new FakeActor("noSkill");
+    game.actors.set(target.id, target);
+    target.createEmbeddedDocuments = async () => { throw new Error("System automatic import must not run"); };
+    const weapon = makeItem(a, "noSkillWeapon", "Pistolet", "weapon", {
+      skill: { main: { id: "oldSkill", name: "Pistolety" } }, ammo: 0
+    });
+    await dropItem({ type: "Item", uuid: weapon.uuid }, { actorUuid: target.uuid, kind: "weapon", index: 0 });
+    const moved = target.items.find(item => item.type === "weapon");
+    assert.equal(moved.system.skill.main.id, "");
+    assert.equal(moved.system.skill.main.name, "Pistolety");
+    assert.equal(moved.system.ammo, 0);
+    assert.equal(target.items.size, 1);
+    assert.equal(inventoryState(target, game.settings.get()).equipped.weapon[0], moved.id);
+  }],
+  ["cancelled native weapon creation preserves the source and its equipment", async ({ a, b, settings }) => {
+    const weapon = makeItem(a, "cancelledWeapon");
+    await equip(a, weapon);
+    CONFIG.Item.documentClass.createDocuments = async () => [];
+    await assert.rejects(dropItem({ type: "Item", uuid: weapon.uuid }, { actorUuid: b.uuid, sectionId: "carried" }));
+    assert.equal(a.items.has(weapon.id), true);
+    assert.equal(b.items.size, 0);
+    assert.equal(inventoryState(a, settings).equipped.weapon[0], weapon.id);
   }],
   ["transfer preserves source when target creation or flag save fails", async ({ a, b }) => {
     const item = makeItem(a, "w");

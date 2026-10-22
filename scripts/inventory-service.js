@@ -158,7 +158,11 @@ export async function dropItem(data, target) {
   delete itemData._id;
   delete itemData.folder;
   rebindWeaponSkills(itemData, source, destination);
-  const [created] = await destination.createEmbeddedDocuments("Item", [itemData]);
+  // CoC7's actor workflow imports weapon skills and reads character-only schema fields.
+  // Skill references are already rebound above; the Item workflow keeps normal validation and hooks.
+  const [created] = itemData.type === "weapon"
+    ? await CONFIG.Item.documentClass.createDocuments([itemData], { parent: destination })
+    : await destination.createEmbeddedDocuments("Item", [itemData]);
   if (!created) throw new Error("Nie udało się dodać przedmiotu do docelowego ekwipunku.");
   try {
     const latest = inventoryState(destination, settings);

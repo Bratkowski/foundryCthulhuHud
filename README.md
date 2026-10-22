@@ -28,7 +28,7 @@ Jedyny wyjątek od wymogu wyposażenia to broń o dokładnej nazwie **`Punch`**.
 
 Sprawdzany jest konkretny UUID przedmiotu. Nieaktualny UUID osadzonego przedmiotu nie jest zastępowany inną bronią o tej samej nazwie. Przeniesienie między aktorami tworzy nowy UUID — makro odnoszące się do wcześniejszego UUID należy ponownie przeciągnąć na pasek makr. Makra wzorców świata/kompendium i wywołania po nazwie wymagają jednoznacznie pasującej broni w ekwipunku.
 
-Przeniesiona broń otrzymuje powiązanie z pasującą umiejętnością aktora docelowego. Jeżeli takiej umiejętności nie ma, należy dodać ją na karcie postaci; HUD nie tworzy umiejętności automatycznie.
+Przeniesiona broń otrzymuje powiązanie z pasującą umiejętnością aktora docelowego. Jeżeli takiej umiejętności nie ma, należy dodać ją na karcie postaci; HUD nie tworzy umiejętności automatycznie. Transfer broni między ekwipunkami korzysta ze standardowego tworzenia dokumentu Item z aktorem docelowym jako rodzicem, z zachowaniem walidacji i zdarzeń Foundry. Nie uruchamia automatycznego importu umiejętności CoC7, który może powodować błąd `Cannot read properties of undefined (reading 'keys')`. Amunicja, obrażenia i pozostałe dane broni są zachowywane.
 
 ## Wagi, udźwig i konfiguracja
 
