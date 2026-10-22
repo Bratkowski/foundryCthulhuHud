@@ -58,7 +58,10 @@ export class InventoryConfig extends FormApplication {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (error) { reportError(error); }
     });
-    html.find("[data-action='import']").on("change", async event => {
+    html.find("[data-action='import']").on("click", () => {
+      html.find("[data-action='import-file']")[0].click();
+    });
+    html.find("[data-action='import-file']").on("change", async event => {
       try {
         if (!game.user.isGM) throw new Error("Konfigurację świata może zmieniać tylko MG.");
         const file = event.currentTarget.files[0];

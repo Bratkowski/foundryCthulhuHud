@@ -42,6 +42,7 @@ class FakeActor {
     return ids.map(id => { const item = this.items.get(id); this.items.delete(id); return item; }).filter(Boolean);
   }
   weaponCheck(data, fastForward) { globalThis.calls.actor.push({ data, fastForward }); return "rolled"; }
+  weaponRoll(weapon, attackerUuid) { globalThis.calls.roll.push({ weapon, attackerUuid }); return "rolled"; }
 }
 
 function makeItem(actor, id, name = "Rewolwer", type = "weapon", system = {}) {
@@ -59,7 +60,7 @@ function fixture() {
   const settings = { slots: { ...DEFAULT_SLOTS }, catalog: [] };
   const a = new FakeActor("A");
   const b = new FakeActor("B", "vehicle");
-  globalThis.calls = { actor: [], macro: [], warnings: [] };
+  globalThis.calls = { actor: [], macro: [], roll: [], warnings: [] };
   globalThis.game = {
     actors: new Collection([[a.id, a], [b.id, b]]), items: new Collection(), scenes: new Collection(),
     settings: { get: () => settings },
@@ -261,6 +262,45 @@ const cases = [
     makeItem(a, "duplicate");
     assert.equal(equippedWeapon(a, { name: local.name }, settings), null);
   }],
+  ["CoC7 8.16 sheet weaponRoll is blocked before chat creation until equipped", async ({ a }) => {
+    const weapon = makeItem(a, "sheetWeapon");
+    installWeaponGuard();
+    installWeaponGuard();
+    assert.equal(a.weaponRoll(weapon, a.uuid), false);
+    assert.equal(calls.roll.length, 0);
+    assert.match(calls.warnings.at(-1), /nie jest wyposażona/);
+    await equip(a, weapon);
+    assert.equal(a.weaponRoll(weapon, a.uuid), "rolled");
+    assert.equal(calls.roll.length, 1);
+    assert.equal(calls.roll[0].weapon, weapon);
+    assert.equal(calls.roll[0].attackerUuid, a.uuid);
+    await unequip(a, "weapon", 0);
+    assert.equal(a.weaponRoll(weapon, a.uuid), false);
+    assert.equal(calls.roll.length, 1);
+  }],
+  ["sheet guards still install when the macro API is unavailable", async () => {
+    class ActorWithoutMacro extends FakeActor {
+      weaponCheck() { throw new Error("Unequipped weaponCheck must not run"); }
+      weaponRoll() { throw new Error("Unequipped weaponRoll must not run"); }
+    }
+    const actor = new ActorWithoutMacro("NoMacro");
+    const item = makeItem(actor, "w");
+    CONFIG.Actor.documentClass = ActorWithoutMacro;
+    delete game.CoC7;
+    installWeaponGuard();
+    assert.equal(actor.weaponCheck({ uuid: item.uuid }), false);
+    assert.equal(actor.weaponRoll(item, actor.uuid), false);
+  }],
+  ["sheet attacks support knife slots and preserve vehicle behavior", async ({ a, b }) => {
+    const knife = makeItem(a, "knifeSheet", "Nóż");
+    const mounted = makeItem(b, "mounted");
+    installWeaponGuard();
+    assert.equal(a.weaponRoll(knife, a.uuid), false);
+    await equip(a, knife, "knife");
+    assert.equal(a.weaponRoll(knife, a.uuid), "rolled");
+    assert.equal(b.weaponRoll(mounted, b.uuid), "rolled");
+    assert.equal(calls.roll.length, 2);
+  }],
   ["world catalog shares definitions by normalized name and type and includes embedded items", ({ a, settings }) => {
     const item = makeItem(a, "w");
     makeItem(null, "template", " REWOLWER ");
@@ -372,6 +412,22 @@ const cases = [
     await form._updateObject();
     assert.equal(settings.slots.weapon, 2);
     assert.equal(settings.catalog[0].weight, 0.25);
+
+    let chooserClicks = 0;
+    const fileInput = { click() { chooserClicks++; } };
+    const configListeners = new Map();
+    form.activateListeners({ find(selector) {
+      return { 0: fileInput, on(event, callback) { configListeners.set(`${selector}:${event}`, callback); return this; } };
+    } });
+    configListeners.get("[data-action='import']:click")();
+    assert.equal(chooserClicks, 1);
+    const imported = { module: MODULE_ID, version: 1, unit: "kg", slots: { weapon: 3, knife: 2, armor: 1 }, catalog: [{ name: "Latarka", type: "item", kind: "gear", weight: 0 }] };
+    const input = { value: "weights.json", files: [{ text: async () => JSON.stringify(imported) }] };
+    await configListeners.get("[data-action='import-file']:change")({ currentTarget: input });
+    assert.equal(input.value, "");
+    assert.equal(form.draft.catalog[0].weight, 0);
+    assert.equal(form.draft.slots.weapon, 3);
+    assert.equal(settings.slots.weapon, 2); // Import changes the draft until Save.
   }]
 ];
 

@@ -1,6 +1,6 @@
 # Cthulhu Player HUD
 
-HUD dla systemu **Call of Cthulhu 7e (CoC7)** w Foundry VTT 12/13. Przycisk znajduje się w grupie **Tokens**, obok narzędzi tokenów. Kliknięcie portretu lub walizki rozwija statystyki i ekwipunek.
+HUD dla systemu **Call of Cthulhu 7e (CoC7)** w Foundry VTT. Uwzględnia ścieżki ataku CoC7 8.16 w Foundry 14 oraz kontrolki Foundry 12/13. Przycisk znajduje się w grupie **Tokens**, obok narzędzi tokenów. Kliknięcie portretu lub walizki rozwija statystyki i ekwipunek. Zawartość całego okna jest przewijana, dzięki czemu sekcje ekwipunku są dostępne również na niższym ekranie.
 
 ## Ekwipunek
 
@@ -17,7 +17,7 @@ Domyślnie każda postać ma **4 sloty broni, 1 slot noża i 1 slot pancerza**. 
 
 W konfiguracji MG może nadać broni kategorię **Nóż**. Nazwy zawierające „knife”, „dagger”, „nóż” lub „sztylet” otrzymują ją domyślnie. Ogólnemu przedmiotowi można nadać kategorię **Pancerz**, również w wersjach CoC7 bez osobnego typu `armor`.
 
-Wywołania `game.CoC7.macros.weaponCheck(...)` oraz `actor.weaponCheck(...)` dla postaci wymagają broni w aktywnym slocie broni lub noża. Sama obecność w plecaku nie wystarcza. Brak wyposażenia wyświetla komunikat i kończy wywołanie **przed kodem systemu tworzącym kartę czatu**. Nie ma wyjątku dla postaci obsługiwanych przez MG; inne typy aktorów zachowują działanie systemu. Pozostałe ścieżki ataków, np. bezpośrednie `weaponRoll`, nie są blokowane.
+Wywołania `game.CoC7.macros.weaponCheck(...)`, `actor.weaponCheck(...)` oraz `actor.weaponRoll(...)` dla postaci wymagają broni w aktywnym slocie broni lub noża. Obejmuje to kliknięcie broni na karcie postaci w CoC7 8.16, które wywołuje bezpośrednio `weaponRoll`. Sama obecność w plecaku nie wystarcza. Brak wyposażenia wyświetla komunikat i kończy wywołanie **przed kodem systemu tworzącym kartę czatu**. Nie ma wyjątku dla postaci obsługiwanych przez MG; inne typy aktorów zachowują działanie systemu.
 
 Sprawdzany jest konkretny UUID przedmiotu. Nieaktualny UUID osadzonego przedmiotu nie jest zastępowany inną bronią o tej samej nazwie. Przeniesienie między aktorami tworzy nowy UUID — makro odnoszące się do wcześniejszego UUID należy ponownie przeciągnąć na pasek makr. Makra wzorców świata/kompendium i wywołania po nazwie wymagają jednoznacznie pasującej broni w ekwipunku.
 
@@ -25,7 +25,7 @@ Przeniesiona broń otrzymuje powiązanie z pasującą umiejętnością aktora do
 
 ## Wagi, udźwig i konfiguracja
 
-Otwórz **Ustawienia → Ustawienia modułów → Cthulhu player Hud → Konfiguruj ekwipunek** albo przycisk zębatki w HUD-zie MG.
+Otwórz **Ustawienia → Ustawienia modułów → Cthulhu player Hud → Konfiguruj ekwipunek** albo przycisk zębatki w HUD-zie MG. Na samej górze formularza znajdują się przyciski **Eksport wag JSON** i **Import wag JSON**. Import otwiera wybór pliku; po wczytaniu kliknij **Zapisz**.
 
 - Ustaw wagę jednostkową w **kg**, kategorię slotu oraz liczbę slotów broni, noży i pancerza (0–50). Formularz przyjmuje kropkę i przecinek dziesiętny.
 - Katalog obejmuje przedmioty świata oraz osadzone przedmioty wszystkich aktorów. Wspólna waga obowiązuje dla tej samej nazwy i typu, bez rozróżniania wielkości liter i skrajnych spacji. Zmiana nazwy tworzy nowe dopasowanie.

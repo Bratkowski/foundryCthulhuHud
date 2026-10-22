@@ -80,7 +80,7 @@ class CthulhuHud extends Application {
       id: "cthulhu-hud", title: "Cthulhu HUD",
       template: "modules/cthulhu-hud/templates/hud.html",
       width: 680, height: "auto", top: 8, left: 260, resizable: true,
-      classes: ["cthulhu-hud-window"], scrollY: [".hud-inventories"]
+      classes: ["cthulhu-hud-window"], scrollY: [".window-content"]
     });
   }
 

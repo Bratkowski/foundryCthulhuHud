@@ -1,15 +1,16 @@
 <form class="inventory-config-form" autocomplete="off">
+  <div class="inventory-config-actions" role="toolbar" aria-label="Import i eksport wag">
+    <button type="button" data-action="export"><i class="fa-solid fa-download" aria-hidden="true"></i> Eksport wag JSON</button>
+    <button type="button" data-action="import"><i class="fa-solid fa-upload" aria-hidden="true"></i> Import wag JSON</button>
+    <input class="inventory-import-file" type="file" accept=".json,application/json" data-action="import-file" aria-label="Plik wag JSON" hidden>
+  </div>
   <p>Wagi jednostkowe w kg. Wspólna waga i kategoria obowiązują dla przedmiotów o tej samej nazwie i typie, również w ekwipunkach aktorów. Dane zapisuje wyłącznie moduł.</p>
   <fieldset class="inventory-slot-settings"><legend>Liczba slotów na postać</legend>
     {{#each slots}}<label>{{label}} <input name="slots.{{kind}}" type="number" min="0" max="50" step="1" value="{{value}}" required></label>{{/each}}
   </fieldset>
-  <p class="notes">Udźwig: 0,25 × (0,7 × SIŁA + 0,3 × BUDOWA [SIZ]). Dla 80 i 80: 20 kg. Pojazd pokazuje ciężar bez limitu. Zmniejszenie liczby slotów wyłącza wyposażenie poza limitem.</p>
-  <div class="inventory-config-actions">
-    <button type="button" data-action="export"><i class="fa-solid fa-download" aria-hidden="true"></i> Eksport JSON</button>
-    <label class="inventory-import">Import JSON <input type="file" accept=".json,application/json" data-action="import"></label>
-  </div>
+  <p class="inventory-help">Udźwig: 0,25 × (0,7 × SIŁA + 0,3 × BUDOWA [SIZ]). Dla 80 i 80: 20 kg. Pojazd pokazuje ciężar bez limitu. Zmniejszenie liczby slotów wyłącza wyposażenie poza limitem.</p>
   <label>Filtruj przedmioty <input type="search" data-action="search" placeholder="Nazwa lub typ…"></label>
-  <p class="notes">Pusta waga oznacza brak danych; 0 oznacza przedmiot bez ciężaru. Noże muszą być bronią z kategorią „Nóż”. Przenoszenie obejmuje cały stos przedmiotów.</p>
+  <p class="inventory-help">Pusta waga oznacza brak danych; 0 oznacza przedmiot bez ciężaru. Noże muszą być bronią z kategorią „Nóż”. Przenoszenie obejmuje cały stos przedmiotów.</p>
   <div class="inventory-catalog-heading"><span>Przedmiot / typ</span><span>Waga (kg / szt.)</span><span>Kategoria slotu</span></div>
   <div class="inventory-catalog">
     {{#each rows}}

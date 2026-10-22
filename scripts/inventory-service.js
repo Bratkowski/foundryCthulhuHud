@@ -171,11 +171,7 @@ const WRAPPED = Symbol.for(`${MODULE_ID}.weaponGuard`);
 export function installWeaponGuard() {
   const macros = game.CoC7?.macros;
   const original = macros?.weaponCheck;
-  if (typeof original !== "function") {
-    ui.notifications.error("Cthulhu HUD: nie znaleziono CoC7.macros.weaponCheck. Sprawdź wersję systemu CoC7.");
-    return;
-  }
-  if (!original[WRAPPED]) {
+  if (typeof original === "function" && !original[WRAPPED]) {
     const wrapped = function (data, event, ...args) {
       const actor = speakerActor();
       if (actor?.type !== "character") return original.call(this, data, event, ...args);
@@ -205,5 +201,20 @@ export function installWeaponGuard() {
     };
     wrapped[WRAPPED] = true;
     prototype.weaponCheck = wrapped;
+  }
+  // CoC7 8.16 actor sheets call weaponRoll directly and bypass weaponCheck.
+  const actorRoll = prototype.weaponRoll;
+  if (typeof actorRoll === "function" && !actorRoll[WRAPPED]) {
+    const wrapped = function (weapon, ...args) {
+      if (this.type !== "character") return actorRoll.call(this, weapon, ...args);
+      const equipped = equippedWeapon(this, weapon, config());
+      if (!equipped) {
+        ui.notifications.warn(`${this.name}: ${weapon?.name ?? "ta broń"} nie jest wyposażona. Umieść ją w slocie broni lub noża w HUD-zie.`);
+        return false;
+      }
+      return actorRoll.call(this, equipped, ...args);
+    };
+    wrapped[WRAPPED] = true;
+    prototype.weaponRoll = wrapped;
   }
 }
