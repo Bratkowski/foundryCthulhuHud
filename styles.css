@@ -1,159 +1,87 @@
-/* Okno jako pasek przyklejony na górze */
 .cthulhu-hud-window {
-  position: fixed;
-  top: 8px;
-  left: 260px;          /* obok lewego toolbara */
-  width: auto;
-  background: transparent;
-  box-shadow: none;
-  background-color: rgba(0, 0, 0, 0.7);
-  color: white;
-  border: 2px solid #444;
+  --hud-bg: #191f20;
+  --hud-panel: #252d2e;
+  --hud-border: #4b6260;
+  --hud-accent: #b5d0b0;
+  color: #eee;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
   border-radius: 8px;
+  min-width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 36px);
 }
-
-/* główny kontener HUD – to będzie jedyna klikalna rzecz */
-.cthulhu-hud-root {
-  display: flex;
-  align-items: stretch;
-  pointer-events: auto;   /* tu znowu włączamy klikanie */
-}
-
-
-.hud-portrait {
-  width: 70px;
-  height: 100px;
-  object-fit: cover;   /* przycina, zamiast rozciągać */
-  display: block;
-}
-
-/* pasek z boxami – na razie zawsze widoczny */
-.cthulhu-hud-strip {
-  background: rgba(0, 0, 0, 0.75);
-  color: white;
-  border-radius: 0 6px 6px 0;
-  padding: 4px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 400px;   /* potem zmienimy na 600 */
-}
-
-.cthulhu-hud-window.collapsed .cthulhu-hud-strip {
-  max-width: 0;
-  opacity: 0;
-  padding-left: 0;
-  padding-right: 0;
-  overflow: hidden;
-}
-
-/* stan otwarty */
-.cthulhu-hud-window.expanded .cthulhu-hud-strip {
-  max-width: 600px;
-  opacity: 1;
-}
-
-.hud-actors-row {
-  display: flex;
-  flex-direction: row;   /* ← ważne: rząd, nie kolumna */
-  gap: 6px;
-  padding: 8px;
-  background: #222;
-}
-
-.hud-actor-tab {
-  cursor: pointer;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.hud-actor-tab.is-active {
-  outline: 2px solid #fff;
-}
-
-/* ładna animacja */
-.cthulhu-hud-strip {
-  transition: max-width 0.2s ease-out, opacity 0.2s ease-out, padding 0.2s ease-out;
-}
-
-/* imię postaci */
-.cthulhu-hud-strip .hud-name {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-/* rząd boksów */
-.hud-stats-row {
-  display: flex;
-  gap: 4px;
-}
-
-/* pojedynczy boks */
-.hud-box {
-  width: 70px;
-  border-radius: 8px;
-  overflow: hidden;
-  font-size: 12px;
-  text-align: center;
-}
-
-/* górna część boksa (max) */
-.hud-box-top {
-  background: #eee;
-  color: #111;
-  padding: 2px 0;
-}
-
-/* domyślnie pokażemy, ale klasy poniżej to nadpiszą */
-.cthulhu-hud-strip {
-  transition: max-height 0.2s ease-out, opacity 0.2s ease-out;
-}
-
-/* zwinięty HUD */
-.cthulhu-hud-window.collapsed .cthulhu-hud-strip {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  padding-top: 0;
-}
-
-/* rozwinięty HUD */
-.cthulhu-hud-window.expanded .cthulhu-hud-strip {
-  max-height: 500px; /* wystarczająco duże, żeby wszystko się zmieściło */
-  opacity: 1;
-}
-
-
-/* dolna część boksa (aktualna wartość) */
-.hud-box-bottom {
-  padding: 4px 0;
-  color: #fff;
-}
-
-/* etykieta (PW/PM/Sz/PP/$) */
-.hud-box-label {
-  font-weight: bold;
-  font-size: 12px;
-}
-
-/* kolory – zgrubne na start */
-.hud-box-hp .hud-box-bottom {
-  background: #a33232;
-}
-
-.hud-box-mp .hud-box-bottom {
-  background: #1a2757;
-}
-
-.hud-box-luck .hud-box-bottom {
-  background: #8a5b20;
-}
-
-.hud-box-san .hud-box-bottom {
-  background: #205f2d;
-}
-
-.hud-box-cash .hud-box-bottom {
-  background: #b79b2d;
-}
+.cthulhu-hud-window .window-content { padding: 0; background: var(--hud-bg); color: inherit; overflow: hidden; }
+.cthulhu-hud-root { display: flex; flex-direction: column; min-height: 0; }
+.cthulhu-hud-window button { color: inherit; background: var(--hud-panel); border: 1px solid var(--hud-border); cursor: pointer; }
+.cthulhu-hud-window button:hover, .cthulhu-hud-window button:focus-visible { border-color: var(--hud-accent); box-shadow: 0 0 3px var(--hud-accent); }
+.hud-actors-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid var(--hud-border); }
+.cthulhu-hud-window .hud-actor-tab { width: 54px; height: 70px; padding: 0; overflow: hidden; border-radius: 5px; flex: 0 0 auto; }
+.hud-portrait { display: block; width: 100%; height: 100%; object-fit: cover; border: 0; }
+.hud-actor-tab.is-active { outline: 2px solid var(--hud-accent); outline-offset: 2px; }
+.cthulhu-hud-window .hud-expand { width: 36px; height: 36px; flex: 0 0 auto; }
+.cthulhu-hud-content { display: flex; flex-direction: column; padding: 12px; gap: 12px; min-height: 0; }
+.cthulhu-hud-window.collapsed .cthulhu-hud-content { display: none; }
+.cthulhu-hud-strip { display: flex; flex-direction: column; gap: 8px; }
+.hud-name { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.hud-stats-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.hud-box { border-radius: 5px; overflow: hidden; font-size: 13px; text-align: center; background: #303b3c; }
+.hud-box-label { font-weight: bold; padding: 3px; }
+.hud-box-top { background: #e1e5df; color: #111; padding: 3px; overflow-wrap: anywhere; }
+.hud-box-bottom { padding: 3px; }
+.hud-box-hp .hud-box-bottom { background: #813839; }
+.hud-box-mp .hud-box-bottom { background: #293b6a; }
+.hud-box-luck .hud-box-bottom { background: #79541e; }
+.hud-box-san .hud-box-bottom { background: #2e613c; }
+.hud-equipment { padding: 10px; border: 1px solid var(--hud-border); border-radius: 6px; }
+.cthulhu-hud-window h3, .cthulhu-hud-window h4 { margin: 0; padding: 0; border: 0; color: inherit; font-size: 14px; }
+.hud-hint { font-size: 11px; color: #bcc7c4; margin: 5px 0; }
+.hud-equipment-group { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.hud-slot-label { flex: 0 0 55px; font-size: 12px; }
+.hud-slot-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.hud-equipment-slot { position: relative; width: 66px; height: 76px; border: 1px dashed var(--hud-border); border-radius: 5px; }
+.hud-empty-slot { display: grid; place-items: center; width: 100%; height: 100%; font-size: 20px; color: #7f9490; }
+.hud-item-tile { position: relative; display: flex; flex-direction: column; width: 64px; height: 74px; border: 1px solid #586865; border-radius: 4px; overflow: hidden; background: #303a3b; cursor: grab; }
+.hud-item-tile img { width: 100%; height: 48px; object-fit: contain; border: 0; background: #14191a; }
+.hud-item-name { display: block; height: 25px; font-size: 10px; line-height: 12px; text-align: center; padding: 1px 2px; overflow: hidden; overflow-wrap: anywhere; }
+.hud-item-count { position: absolute; top: 2px; right: 2px; min-width: 16px; padding: 0 3px; background: #111d; color: #fff; font-size: 11px; border-radius: 3px; }
+.hud-item-tile.is-equipped { border-color: var(--hud-accent); }
+.hud-equipped-mark { position: absolute; top: 3px; left: 3px; color: #bee9ad; font-size: 11px; text-shadow: 0 1px 3px black; }
+.cthulhu-hud-window .hud-unequip { position: absolute; bottom: -5px; right: -5px; width: 20px; height: 20px; line-height: 16px; padding: 0; border-radius: 50%; background: #712f32; z-index: 1; }
+.hud-inventory-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.hud-inventory-toolbar select { flex: 1; min-width: 160px; color: #eee; background: #252d2e; }
+.hud-inventory-toolbar button { width: auto; padding: 0 8px; }
+.hud-inventories { overflow-y: auto; max-height: 35vh; min-height: 70px; scrollbar-width: thin; padding-right: 3px; }
+.hud-inventory { padding: 10px; background: var(--hud-panel); border: 1px solid var(--hud-border); border-radius: 6px; margin-bottom: 10px; }
+.hud-inventory-header, .hud-inventory-section > header { display: flex; align-items: center; gap: 6px; }
+.hud-inventory-header h3, .hud-inventory-section h4 { flex: 1; overflow-wrap: anywhere; }
+.hud-inventory-header button, .hud-inventory-section > header button { width: auto; font-size: 11px; line-height: 22px; padding: 0 6px; }
+.hud-weight { color: #cbe0c4; font-size: 12px; margin: 6px 0; }
+.hud-weight.is-overloaded { color: #ffb0a4; font-weight: bold; }
+.hud-unknown-weight { color: #edcf91; }
+.hud-inventory-section { margin-top: 10px; }
+.hud-inventory-section h4 { font-size: 12px; }
+.hud-item-grid { display: grid; grid-template-columns: repeat(auto-fill, 64px); gap: 7px; padding: 8px; min-height: 60px; border: 1px dashed #536461; border-radius: 4px; margin-top: 5px; }
+.hud-empty-inventory { grid-column: 1 / -1; color: #b5c0bc; align-self: center; font-size: 12px; }
+.hud-drop-zone.is-dragover { border-color: #d4ebc9; background: #567258; box-shadow: inset 0 0 0 1px #d4ebc9; }
+.cthulhu-item-tooltip { display: flex; gap: 12px; align-items: center; max-width: 320px; text-align: left; overflow-wrap: anywhere; }
+.cthulhu-item-tooltip img { width: 70px; height: 70px; object-fit: contain; border: 0; }
+.cthulhu-item-tooltip p { margin: 4px 0; font-size: 12px; }
+.cthulhu-inventory-config .window-content { overflow: hidden; }
+.inventory-config-form { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; }
+.inventory-config-form p { margin: 0; font-size: 12px; }
+.inventory-slot-settings { display: flex; gap: 16px; flex-wrap: wrap; }
+.inventory-slot-settings label { display: flex; gap: 6px; align-items: center; }
+.inventory-slot-settings input { width: 65px; }
+.inventory-config-actions { display: flex; align-items: center; gap: 12px; }
+.inventory-config-actions button { width: auto; }
+.inventory-import { display: flex; align-items: center; gap: 8px; }
+.inventory-import input { max-width: 230px; }
+.inventory-catalog { flex: 1; min-height: 100px; overflow: auto; }
+.inventory-catalog-heading, .inventory-catalog-row { display: grid; grid-template-columns: minmax(140px, 1fr) 125px 135px; gap: 10px; align-items: center; }
+.inventory-catalog-heading { font-weight: bold; font-size: 12px; padding-right: 10px; }
+.inventory-catalog-row { padding: 6px 0; border-bottom: 1px solid #8885; }
+.inventory-catalog-row[hidden] { display: none; }
+.inventory-catalog-row label { overflow-wrap: anywhere; }
+.inventory-catalog-row small { display: block; opacity: 0.7; }
+.inventory-config-form footer { flex: 0 0 auto; }

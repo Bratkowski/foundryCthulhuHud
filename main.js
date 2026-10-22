@@ -1,174 +1,228 @@
-let hudApp = null;
+import {
+  MODULE_ID, DEFAULT_SECTION, DEFAULT_SLOTS, SLOT_TYPES, PHYSICAL_TYPES,
+  inventoryState, inventorySummary, quantity, itemDefinition
+} from "./scripts/inventory-model.js";
+import {
+  config, ownedActors, addSection, removeSection, unequip, dropItem,
+  editInventory, installWeaponGuard, reportError
+} from "./scripts/inventory-service.js";
+import { InventoryConfig } from "./scripts/inventory-config.js";
 
-// Automatyczny refresh HUD-u gdy jakikolwiek aktor się zmienia
-Hooks.on("updateActor", (actor, data) => {
-  if (hudApp) hudApp.render(false);
+let hudApp = null;
+let tileTemplates;
+function loadTileTemplates() {
+  const load = foundry.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
+  return tileTemplates ??= load(["modules/cthulhu-hud/templates/item-tile.html"]);
+}
+const kg = value => Number(value.toFixed(3)).toLocaleString("pl-PL", { maximumFractionDigits: 3 });
+const escapeHTML = value => String(value ?? "").replace(/[&<>"']/g, character => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+})[character]);
+
+function refreshHud() {
+  if (hudApp?.rendered) hudApp.render(false);
+}
+
+Hooks.once("init", () => {
+  game.settings.register(MODULE_ID, "inventoryConfig", {
+    scope: "world", config: false, type: Object,
+    default: { slots: { ...DEFAULT_SLOTS }, catalog: [] }, onChange: refreshHud
+  });
+  game.settings.registerMenu(MODULE_ID, "inventory", {
+    name: "Ekwipunek — wagi i sloty", label: "Konfiguruj ekwipunek",
+    hint: "Wagi przedmiotów świata, kategorie wyposażenia, liczba slotów oraz import i eksport JSON.",
+    icon: "fa-solid fa-boxes-stacked", type: InventoryConfig, restricted: true
+  });
 });
 
+Hooks.once("ready", async () => {
+  installWeaponGuard();
+  await loadTileTemplates();
+});
+
+for (const hook of ["createActor", "updateActor", "deleteActor", "createItem", "updateItem", "deleteItem", "updateUser", "createActiveEffect", "updateActiveEffect", "deleteActiveEffect", "updateToken"]) {
+  Hooks.on(hook, refreshHud);
+}
+
+function toggleHud() {
+  if (hudApp?.rendered) hudApp.close();
+  else {
+    hudApp ??= new CthulhuHud();
+    hudApp.render(true);
+  }
+}
 
 Hooks.on("getSceneControlButtons", controls => {
-  controls.notes.tools.CthulhuPlayerHud  = {
-    name: "CthulhuPlayerHud",
-    title: "Najważnieszje staty",
-    icon: "fa-solid fa-user",
-    order: Object.keys(controls.notes.tools).length,
-    button: true,
-    visible: true,
-    onChange: active => {
-  if (active) {
-        if (!hudApp) hudApp = new CthulhuHud();
-        hudApp.render(true);
-      } else {
-        if (hudApp) hudApp.close();
-      }
-
-  const actor = game.user.character;
-  if (!actor) {
-  console.log("Brak przypisanego aktora!");
-  } else {
-    const name = actor.name;
-    const hpValue = actor.system.attribs.hp.value;
-    const hpMax = actor.system.attribs.hp.max;
-    const sanValue = actor.system.attribs.san.value;
-    const sanMax = actor.system.attribs.san.max;
-    const luckValue = actor.system.attribs.lck.value;
-    const mpValue = actor.system.attribs.mp.value;
-    const mpMax = actor.system.attribs.mp.max;
-
-console.log("=== DANE AKTORA ===");
-
-console.log("Imię i nazwisko:", actor.name);
-
-// HP
-console.log("HP:", actor.system.attribs.hp.value, "/", actor.system.attribs.hp.max);
-
-// SAN
-console.log("SAN:", actor.system.attribs.san.value, "/", actor.system.attribs.san.max);
-
-// Luck
-console.log("Luck:", actor.system.attribs.lck.value);
-
-// Magic Points
-console.log("MP:", actor.system.attribs.mp.value, "/", actor.system.attribs.mp.max);
-}
-}
+  const tool = {
+    name: "CthulhuPlayerHud", title: "Cthulhu HUD — statystyki i ekwipunek",
+    icon: "fa-solid fa-user", button: true, visible: true,
+    onClick: toggleHud, onChange: toggleHud
   };
-})
+  if (Array.isArray(controls)) {
+    controls.find(control => control.name === "token")?.tools.push(tool);
+  } else if (controls.tokens) {
+    tool.order = Object.keys(controls.tokens.tools).length;
+    delete tool.onClick;
+    controls.tokens.tools[tool.name] = tool;
+  }
+});
 
 class CthulhuHud extends Application {
-
-    // 1) NOWE: konstruktor – stan: który aktor jest wybrany
   constructor(...args) {
     super(...args);
-
-    const userChar = game.user.character;
-    this.selectedActorId = userChar ? userChar.id : null;
+    this.selectedActorId = game.user.character?.id ?? null;
+    this.expanded = false;
+    this.busy = false;
   }
 
-    static get defaultOptions() {
+  static get defaultOptions() {
     return foundry.utils.mergeObject(super.defaultOptions, {
-      id: "cthulhu-hud",
-      title: "Cthulhu HUD",
+      id: "cthulhu-hud", title: "Cthulhu HUD",
       template: "modules/cthulhu-hud/templates/hud.html",
-      popOut: true,                 // okno oderwane typu popup
-      width: 600,
-      height: "auto",
-      classes: ["cthulhu-hud-window"]
+      width: 680, height: "auto", top: 8, left: 260, resizable: true,
+      classes: ["cthulhu-hud-window"], scrollY: [".hud-inventories"]
     });
   }
 
-getData() {
-  let characters;
-
-  if (game.user.isGM) {
-    // MG – wszyscy badacze typu "character" z właścicielem
-    characters = game.actors.filter(a => a.type === "character" && a.hasPlayerOwner);
-  } else {
-    // gracz – tylko jego postać
-    const userChar = game.user.character;
-    characters = userChar ? [userChar] : [];
+  tile(item, actor, state, settings) {
+    const definition = itemDefinition(item, settings);
+    const count = quantity(item);
+    const weight = definition.weight === null ? "?" : kg(definition.weight);
+    const equipped = SLOT_TYPES.some(kind => state.equipped[kind].includes(item.id));
+    const image = item.img || "icons/svg/item-bag.svg";
+    const tooltip = `<div class="cthulhu-item-tooltip"><img src="${escapeHTML(image)}" alt=""><div><strong>${escapeHTML(item.name)}</strong><p>Ilość: ${count} · ${weight} kg / szt.</p><p>${equipped ? "Wyposażone" : "W ekwipunku"}</p></div></div>`;
+    return { id: item.id, uuid: item.uuid, actorUuid: actor.uuid, name: item.name, image, count, weight, equipped, tooltip };
   }
 
-  // jeśli nic nie jest wybrane, a lista nie jest pusta → wybierz pierwszego
-  if (!this.selectedActorId && characters.length > 0) {
-    this.selectedActorId = characters[0].id;
-  }
-
-  // wybrany aktor (albo pierwszy z listy)
-  const actor = characters.find(a => a.id === this.selectedActorId) ?? characters[0];
-
-  // lista do paska portretów
-  const actorTabs = characters.map(a => ({
-    id: a.id,
-    name: a.name,
-    portrait: a.img || (a.prototypeToken.texture.src),
-    isSelected: a.id === this.selectedActorId
-  }));
-
-  // jeśli z jakiegoś powodu nie ma aktora
-  if (!actor) {
+  inventory(actor, settings) {
+    const state = inventoryState(actor, settings);
+    const summary = inventorySummary(actor, settings);
+    const items = actor.items.filter(item => PHYSICAL_TYPES.has(item.type));
     return {
-      actors: actorTabs,
-      name: "Brak postaci",
-      hpValue: 0,
-      hpMax: 0,
-      sanValue: 0,
-      sanMax: 0,
-      luckValue: 0,
-      mpValue: 0,
-      mpMax: 0,
-      cashValue: 0
+      actorId: actor.id, actorUuid: actor.uuid, name: actor.name, isVehicle: actor.type === "vehicle",
+      detachable: actor.id !== this.selectedActorId,
+      weight: kg(summary.weight), unknown: summary.unknown, overloaded: summary.overloaded,
+      hasLimit: summary.limit !== null, limit: summary.limit === null ? "—" : kg(summary.limit),
+      sections: state.sections.map(section => ({
+        ...section, actorUuid: actor.uuid, removable: section.id !== DEFAULT_SECTION,
+        items: items.filter(item => state.placements.find(p => p.itemId === item.id)?.sectionId === section.id)
+          .map(item => this.tile(item, actor, state, settings))
+      }))
     };
   }
 
-  // normalny przypadek
-  return {
-    actors: actorTabs,  // ← NAJWAŻNIEJSZE
-    name: actor.name,
-    hpValue: actor.system.attribs.hp.value,
-    hpMax: actor.system.attribs.hp.max,
-    sanValue: actor.system.attribs.san.value,
-    sanMax: actor.system.attribs.san.max,
-    luckValue: actor.system.attribs.lck.value,
-    mpValue: actor.system.attribs.mp.value,
-    mpMax: actor.system.attribs.mp.max,
-    cashValue: actor.system.monetary.cash
-  };
-}
-
-
-activateListeners(html) {
-  super.activateListeners(html);
-
-  const rootEl = this.element[0];
-
-  // Pierwsze renderowanie: start jako "collapsed"
-  if (!rootEl.classList.contains("collapsed") &&
-      !rootEl.classList.contains("expanded")) {
-    rootEl.classList.add("collapsed");
+  async getData() {
+    await loadTileTemplates();
+    const available = ownedActors();
+    const characters = available.filter(actor => actor.type === "character");
+    const actor = characters.find(character => character.id === this.selectedActorId) ?? characters[0];
+    this.selectedActorId = actor?.id ?? null;
+    const settings = config();
+    const attached = game.user.getFlag(MODULE_ID, "inventoryActors") ?? [];
+    const inventories = available.filter(a => a.id === actor?.id || attached.includes(a.id));
+    const attrs = actor?.system?.attribs ?? {};
+    const state = actor ? inventoryState(actor, settings) : null;
+    const labels = { weapon: "Broń", knife: "Nóż", armor: "Pancerz" };
+    return {
+      actors: characters.map(a => ({ id: a.id, name: a.name, portrait: a.img || a.prototypeToken?.texture?.src || "icons/svg/mystery-man.svg", isSelected: a.id === actor?.id })),
+      hasActor: Boolean(actor), name: actor?.name ?? "Brak postaci — wybierz dostępny ekwipunek",
+      hpValue: attrs.hp?.value ?? 0, hpMax: attrs.hp?.max ?? 0,
+      mpValue: attrs.mp?.value ?? 0, mpMax: attrs.mp?.max ?? 0,
+      sanValue: attrs.san?.value ?? 0, sanMax: attrs.san?.max ?? 0,
+      luckValue: attrs.lck?.value ?? 0, cashValue: actor?.system?.monetary?.cash ?? "—",
+      isGM: game.user.isGM, expanded: this.expanded,
+      equipment: actor ? SLOT_TYPES.map(kind => ({
+        kind, label: labels[kind], actorUuid: actor.uuid,
+        slots: state.equipped[kind].map((id, index) => ({
+          kind, index, number: index + 1, actorUuid: actor.uuid,
+          item: id ? this.tile(actor.items.get(id), actor, state, settings) : null
+        }))
+      })) : [],
+      inventories: inventories.map(a => this.inventory(a, settings)),
+      availableInventories: available.filter(a => !inventories.includes(a)).map(a => ({ id: a.id, name: `${a.name} (${a.type === "vehicle" ? "pojazd" : "postać"})` }))
+    };
   }
 
-  // Kliknięcie portretu:
-  // - zmiana aktora
-  // - rozwinięcie HUD-u
-  html.find(".hud-actor-tab").on("click", ev => {
-    const id = ev.currentTarget.dataset.actorId;
-    if (!id) return;
-
-    // zmiana wybranego aktora
-    if (id !== this.selectedActorId) {
-      this.selectedActorId = id;
+  activateListeners(html) {
+    super.activateListeners(html);
+    const root = this.element[0];
+    root.classList.toggle("collapsed", !this.expanded);
+    root.classList.toggle("expanded", this.expanded);
+    html.find("[data-action='select-actor']").on("click", event => {
+      this.selectedActorId = event.currentTarget.dataset.actorId;
+      this.expanded = true;
       this.render(false);
-    }
-
-    // rozwiń HUD (jeśli jest złożony)
-    rootEl.classList.remove("collapsed");
-    rootEl.classList.add("expanded");
-  });
+    });
+    html.find("[data-action='expand']").on("click", () => {
+      this.expanded = !this.expanded;
+      this.render(false);
+    });
+    html.find("[data-action='config']").on("click", () => new InventoryConfig().render(true));
+    const run = action => {
+      if (this.busy) return;
+      this.busy = true;
+      editInventory(action).catch(reportError).finally(() => { this.busy = false; refreshHud(); });
+    };
+    html.find("[data-action='attach-inventory']").on("click", () => run(async () => {
+      const id = html.find("[name='inventory-actor']").val();
+      if (!ownedActors().some(actor => actor.id === id)) return;
+      const ids = game.user.getFlag(MODULE_ID, "inventoryActors") ?? [];
+      await game.user.setFlag(MODULE_ID, "inventoryActors", [...new Set([...ids, id])]);
+    }));
+    html.find("[data-action='detach-inventory']").on("click", event => run(async () => {
+      const id = event.currentTarget.dataset.actorId;
+      const ids = game.user.getFlag(MODULE_ID, "inventoryActors") ?? [];
+      await game.user.setFlag(MODULE_ID, "inventoryActors", ids.filter(value => value !== id));
+    }));
+    html.find("[data-action='add-section']").on("click", event => {
+      const actorUuid = event.currentTarget.dataset.actorUuid;
+      new Dialog({
+        title: "Nowa sekcja ekwipunku",
+        content: '<form><label>Nazwa sekcji <input name="section-name" type="text" maxlength="80" placeholder="np. Plecak, Bagażnik" autofocus></label></form>',
+        buttons: {
+          add: { label: "Dodaj", callback: dialog => run(async () => addSection(await fromUuid(actorUuid), dialog.find("[name='section-name']").val())) },
+          cancel: { label: "Anuluj" }
+        }, default: "add"
+      }).render(true);
+    });
+    html.find("[data-action='remove-section']").on("click", event => run(async () => {
+      const { actorUuid, sectionId } = event.currentTarget.dataset;
+      await removeSection(await fromUuid(actorUuid), sectionId);
+    }));
+    html.find("[data-action='unequip']").on("click", event => {
+      event.stopPropagation();
+      const { actorUuid, kind, index } = event.currentTarget.dataset;
+      run(async () => unequip(await fromUuid(actorUuid), kind, Number(index)));
+    });
+    html.find(".hud-item-tile").on("dblclick", async event => {
+      try {
+        const item = await fromUuid(event.currentTarget.dataset.uuid);
+        if (item?.isOwner) item.sheet.render(true);
+      } catch (error) { reportError(error); }
+    });
+    html.find(".hud-item-tile").on("dragstart", event => {
+      const tile = event.currentTarget;
+      const data = { type: "Item", uuid: tile.dataset.uuid, fromSlot: Boolean(tile.closest(".hud-equipment-slot")) };
+      event.originalEvent.dataTransfer.setData("text/plain", JSON.stringify(data));
+      event.originalEvent.dataTransfer.effectAllowed = "copyMove";
+    });
+    html.find(".hud-drop-zone").on("dragover", event => {
+      event.preventDefault();
+      event.currentTarget.classList.add("is-dragover");
+    }).on("dragleave", event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove("is-dragover");
+    }).on("drop", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.classList.remove("is-dragover");
+      const { actorUuid, sectionId, kind, index } = event.currentTarget.dataset;
+      const raw = event.originalEvent.dataTransfer.getData("text/plain");
+      run(async () => {
+        let data;
+        try { data = JSON.parse(raw); }
+        catch { throw new Error("Nieprawidłowe dane przeciąganego przedmiotu."); }
+        await dropItem(data, { actorUuid, sectionId, kind, index: Number(index) });
+      });
+    });
+  }
 }
-
-
-
-
-}
-;

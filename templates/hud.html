@@ -1,48 +1,73 @@
 <div class="cthulhu-hud-root">
-
-<div class="hud-actors-row">
-  {{#each actors}}
-    <div class="hud-actor-tab {{#if isSelected}}is-active{{/if}}" data-actor-id="{{id}}">
+  <nav class="hud-actors-row" aria-label="Postacie">
+    {{#each actors}}
+    <button type="button" class="hud-actor-tab {{#if isSelected}}is-active{{/if}}" data-action="select-actor" data-actor-id="{{id}}" title="{{name}}" aria-label="{{name}}">
       <img src="{{portrait}}" alt="{{name}}" class="hud-portrait">
+    </button>
+    {{/each}}
+    <button type="button" class="hud-expand" data-action="expand" title="Rozwiń / zwiń HUD" aria-expanded="{{expanded}}"><i class="fa-solid fa-suitcase" aria-hidden="true"></i></button>
+    {{#if isGM}}<button type="button" class="hud-expand" data-action="config" title="Konfiguracja ekwipunku" aria-label="Konfiguracja ekwipunku"><i class="fa-solid fa-gear" aria-hidden="true"></i></button>{{/if}}
+  </nav>
+  <div class="cthulhu-hud-content">
+    <div class="cthulhu-hud-strip">
+      <div class="hud-name">{{name}}</div>
+      {{#if hasActor}}
+      <div class="hud-stats-row">
+        <div class="hud-box hud-box-hp"><div class="hud-box-label">PW</div><div class="hud-box-top">{{hpValue}}</div><div class="hud-box-bottom">{{hpMax}}</div></div>
+        <div class="hud-box hud-box-mp"><div class="hud-box-label">PM</div><div class="hud-box-top">{{mpValue}}</div><div class="hud-box-bottom">{{mpMax}}</div></div>
+        <div class="hud-box hud-box-luck"><div class="hud-box-label">Sz</div><div class="hud-box-top">{{luckValue}}</div><div class="hud-box-bottom">99</div></div>
+        <div class="hud-box hud-box-san"><div class="hud-box-label">PP</div><div class="hud-box-top">{{sanValue}}</div><div class="hud-box-bottom">{{sanMax}}</div></div>
+        <div class="hud-box hud-box-cash"><div class="hud-box-label">Gotówka</div><div class="hud-box-top">{{cashValue}}</div></div>
+      </div>
+      {{/if}}
     </div>
-  {{/each}}
-</div>
-
-  <!-- Zawartość, która się „rozwija” -->
-  <div class="cthulhu-hud-strip">
-    <div class="hud-name">{{name}}</div>
-
-    <div class="hud-stats-row">
-      <div class="hud-box hud-box-hp">
-        <div class="hud-box-label">PW</div>
-        <div class="hud-box-top">{{hpValue}}</div>
-        <div class="hud-box-bottom">{{hpMax}}</div>
+    {{#if hasActor}}
+    <section class="hud-equipment" aria-label="Aktywne wyposażenie">
+      <h3>Wyposażenie przy sobie</h3>
+      <p class="hud-hint">Przeciągnij przedmiot do pasującego slotu. × zdejmuje wyposażenie.</p>
+      {{#each equipment}}
+      <div class="hud-equipment-group">
+        <span class="hud-slot-label">{{label}}</span>
+        <div class="hud-slot-row">
+          {{#each slots}}
+          <div class="hud-equipment-slot hud-drop-zone" data-actor-uuid="{{actorUuid}}" data-kind="{{kind}}" data-index="{{index}}">
+            {{#if item}}
+              {{> "modules/cthulhu-hud/templates/item-tile.html" item}}
+              <button type="button" class="hud-unequip" data-action="unequip" data-actor-uuid="{{actorUuid}}" data-kind="{{kind}}" data-index="{{index}}" title="Zdejmij wyposażenie" aria-label="Zdejmij wyposażenie">×</button>
+            {{else}}
+              <span class="hud-empty-slot">{{number}}</span>
+            {{/if}}
+          </div>
+          {{else}}<span class="hud-hint">Brak slotów</span>{{/each}}
+        </div>
       </div>
-
-      <div class="hud-box hud-box-mp">
-        <div class="hud-box-label">PM</div>
-        <div class="hud-box-top">{{mpValue}}</div>
-        <div class="hud-box-bottom">{{mpMax}}</div>
-      </div>
-
-      <div class="hud-box hud-box-luck">
-        <div class="hud-box-label">Sz</div>
-        <div class="hud-box-top">{{luckValue}}</div>
-        <div class="hud-box-bottom">99</div>
-      </div>
-
-      <div class="hud-box hud-box-san">
-        <div class="hud-box-label">PP</div>
-        <div class="hud-box-top">{{sanValue}}</div>
-        <div class="hud-box-bottom">{{sanMax}}</div>
-      </div>
-
-      <div class="hud-box hud-box-cash">
-        <div class="hud-box-label">Gotówka</div>
-        <div class="hud-box-top"></div>
-        <div class="hud-box-bottom">{{cashValue}}</div>
-      </div>
+      {{/each}}
+    </section>
+    {{/if}}
+    <div class="hud-inventory-toolbar">
+      <select name="inventory-actor" aria-label="Wybierz ekwipunek aktora"><option value="">Wybierz postać lub pojazd…</option>{{#each availableInventories}}<option value="{{id}}">{{name}}</option>{{/each}}</select>
+      <button type="button" data-action="attach-inventory"><i class="fa-solid fa-plus" aria-hidden="true"></i> Pokaż ekwipunek</button>
+    </div>
+    <div class="hud-inventories">
+      {{#each inventories}}
+      <section class="hud-inventory" data-actor-uuid="{{actorUuid}}">
+        <header class="hud-inventory-header">
+          <h3><i class="fa-solid {{#if isVehicle}}fa-car{{else}}fa-user{{/if}}" aria-hidden="true"></i> {{name}}</h3>
+          <button type="button" data-action="add-section" data-actor-uuid="{{actorUuid}}" title="Dodaj np. plecak lub bagażnik">+ Sekcja</button>
+          {{#if detachable}}<button type="button" data-action="detach-inventory" data-actor-id="{{actorId}}" title="Ukryj dodatkowy ekwipunek" aria-label="Ukryj dodatkowy ekwipunek">−</button>{{/if}}
+        </header>
+        <p class="hud-weight {{#if overloaded}}is-overloaded{{/if}}">Ciężar: {{weight}} kg{{#if hasLimit}} / {{limit}} kg{{/if}}{{#if overloaded}} · Przekroczony udźwig{{/if}}</p>
+        {{#if unknown}}<p class="hud-hint hud-unknown-weight">Bez ustalonej wagi: {{unknown}}. Ciężar jest niepełny.</p>{{/if}}
+        {{#each sections}}
+        <section class="hud-inventory-section">
+          <header><h4>{{name}}</h4>{{#if removable}}<button type="button" data-action="remove-section" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}" title="Usuń sekcję; rzeczy wrócą do Ekwipunku" aria-label="Usuń sekcję">×</button>{{/if}}</header>
+          <div class="hud-item-grid hud-drop-zone" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}">
+            {{#each items}}{{> "modules/cthulhu-hud/templates/item-tile.html" this}}{{else}}<span class="hud-empty-inventory">Przeciągnij tutaj przedmiot</span>{{/each}}
+          </div>
+        </section>
+        {{/each}}
+      </section>
+      {{else}}<p class="hud-hint">Brak dostępnych ekwipunków. MG może nadać prawo właściciela do postaci lub pojazdu.</p>{{/each}}
     </div>
   </div>
-
 </div>

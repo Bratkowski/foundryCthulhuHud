@@ -4,6 +4,27 @@
     "es2021": true
   },
   "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "globals": {
+    "Application": "readonly",
+    "FormApplication": "readonly",
+    "Dialog": "readonly",
+    "Hooks": "readonly",
+    "game": "readonly",
+    "ui": "readonly",
+    "foundry": "readonly",
+    "CONFIG": "readonly",
+    "ChatMessage": "readonly",
+    "fromUuid": "readonly"
+  },
+  "overrides": [{
+    "files": ["tests/**/*.js"],
+    "env": { "node": true },
+    "globals": { "calls": "readonly" }
+  }],
   "rules": {
     "no-unused-vars": "warn",
     "semi": ["warn", "always"]
