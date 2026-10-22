@@ -7,6 +7,7 @@ import {
   editInventory, installWeaponGuard, reportError
 } from "./scripts/inventory-service.js";
 import { InventoryConfig } from "./scripts/inventory-config.js";
+import { chooseTransferAmount } from "./scripts/inventory-dialogs.js";
 
 let hudApp = null;
 let tileTemplates;
@@ -91,7 +92,7 @@ class CthulhuHud extends Application {
     const equipped = equippedIds(state).has(item.id);
     const totalWeight = definition.weight === null ? "?" : kg(definition.weight * count);
     const image = item.img || "icons/svg/item-bag.svg";
-    const tooltip = `<div class="cthulhu-item-tooltip"><img src="${escapeHTML(image)}" alt=""><div><strong>${escapeHTML(item.name)}</strong><p>Ilość: ${count} · ${weight} kg / szt.</p><p>${equipped ? "Wyposażone" : "W ekwipunku"}</p></div></div>`;
+    const tooltip = `<div class="cthulhu-item-tooltip"><img src="${escapeHTML(image)}" alt=""><div><strong>${escapeHTML(item.name)}</strong><p>Ilość: ${count} · ${weight} kg/szt.</p><p>Łącznie: ${totalWeight} kg</p><p>${equipped ? "Wyposażone" : "W ekwipunku"}</p></div></div>`;
     return { id: item.id, uuid: item.uuid, actorUuid: actor.uuid, name: item.name, image, count, weight, totalWeight, equipped, tooltip };
   }
 
@@ -247,12 +248,18 @@ class CthulhuHud extends Application {
       event.stopPropagation();
       event.currentTarget.classList.remove("is-dragover");
       const { actorUuid, sectionId, kind, index } = event.currentTarget.dataset;
+      const mergeItemId = event.target?.closest(".hud-item-tile")?.dataset.itemId;
       const raw = event.originalEvent.dataTransfer.getData("text/plain");
       run(async () => {
         let data;
         try { data = JSON.parse(raw); }
         catch { throw new Error("Nieprawidłowe dane przeciąganego przedmiotu."); }
-        await dropItem(data, { actorUuid, sectionId, kind, index: Number(index) });
+        const item = data.type === "Item" && data.uuid ? await fromUuid(data.uuid) : null;
+        if (!item || !PHYSICAL_TYPES.has(item.type)) throw new Error("Przeciągnij przedmiot z ekwipunku.");
+        const expectedQuantity = quantity(item);
+        const amount = await chooseTransferAmount(item);
+        if (amount === null) return;
+        await dropItem(data, { actorUuid, sectionId, kind, index: Number(index), mergeItemId, amount, expectedQuantity });
       });
     });
   }

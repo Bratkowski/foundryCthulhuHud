@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import {
   MODULE_ID, DEFAULT_SLOTS, capacity, defaultKind, itemKey, itemDefinition, inventoryState,
-  inventorySummary, equipmentSummary, orderedInventories, validateConfig, equippedWeapon
+  inventorySummary, equipmentSummary, orderedInventories, validateConfig, equippedWeapon, canStack, quantity
 } from "../scripts/inventory-model.js";
 import {
   dropItem, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, worldCatalog, installWeaponGuard, editInventory
 } from "../scripts/inventory-service.js";
+import { chooseTransferAmount } from "../scripts/inventory-dialogs.js";
 
 class Collection extends Map {
   [Symbol.iterator]() { return this.values(); }
@@ -29,12 +30,14 @@ class FakeActor {
   getFlag(module, key) { return structuredClone(this.flags[key]); }
   async setFlag(module, key, data) {
     if (this.failSave) throw new Error("save failed");
+    if (this.cancelSave) return undefined;
     this.flags[key] = structuredClone(data);
     return this;
   }
   async createEmbeddedDocuments(type, rows) {
     if (this.failCreate) throw new Error("create failed");
-    return rows.map(row => makeItem(this, `copy${++serial}`, row.name, row.type, row.system));
+    if (this.cancelCreate) return [];
+    return rows.map(({ _id, name, type: itemType, system, ...extra }) => makeItem(this, `copy${++serial}`, name, itemType, system, extra));
   }
   async deleteEmbeddedDocuments(type, ids) {
     if (this.failDelete) throw new Error("delete failed");
@@ -45,11 +48,21 @@ class FakeActor {
   weaponRoll(weapon, attackerUuid) { globalThis.calls.roll.push({ weapon, attackerUuid }); return "rolled"; }
 }
 
-function makeItem(actor, id, name = "Rewolwer", type = "weapon", system = {}) {
+function makeItem(actor, id, name = "Rewolwer", type = "weapon", system = {}, extra = {}) {
   const item = {
-    id, name, type, system, parent: actor, uuid: actor ? `${actor.uuid}.Item.${id}` : `Item.${id}`,
+    ...structuredClone(extra), id, name, type, system: structuredClone(system), parent: actor, uuid: actor ? `${actor.uuid}.Item.${id}` : `Item.${id}`,
     isOwner: true, testUserPermission: () => true,
-    toObject() { return { _id: id, name, type, system: structuredClone(system) }; }
+    toObject() { return { ...structuredClone(extra), _id: id, name: this.name, type: this.type, system: structuredClone(this.system) }; },
+    async update(changes) {
+      if (this.failUpdate) throw new Error("update failed");
+      if (this.cancelUpdate) return undefined;
+      this.system.quantity = changes["system.quantity"];
+      if (this.failAfterUpdate) {
+        this.failAfterUpdate = false;
+        throw new Error("response lost after update");
+      }
+      return this;
+    }
   };
   if (actor) actor.items.set(id, item);
   else game.items.set(id, item);
@@ -104,9 +117,9 @@ async function equip(actor, item, kind = "weapon", index = 0) {
 
 const cases = [
   ["capacity uses STR and SIZ and does not assign a character limit to vehicles", ({ a, b }) => {
-    assert.equal(capacity(a), 20);
+    assert.equal(capacity(a), 28);
     a.system.characteristics.str.value = 40;
-    assert.equal(capacity(a), 13);
+    assert.equal(capacity(a), 18.2);
     a.system.characteristics.siz.value = null;
     assert.equal(capacity(a), null);
     assert.equal(capacity(b), null);
@@ -128,8 +141,10 @@ const cases = [
     await equip(a, item);
     assert.equal(inventorySummary(a, settings).weight, 0);
     assert.equal(inventorySummary(a, settings).unknown, 0);
-    settings.catalog[0].weight = 21;
-    assert.equal(inventorySummary(a, settings).weight, 21);
+    settings.catalog[0].weight = 28;
+    assert.equal(inventorySummary(a, settings).overloaded, false);
+    settings.catalog[0].weight = 29;
+    assert.equal(inventorySummary(a, settings).weight, 29);
     assert.equal(inventorySummary(a, settings).overloaded, true);
   }],
   ["Polish and English knife names receive knife slots", () => {
@@ -287,6 +302,246 @@ const cases = [
     await dropItem({ type: "Item", uuid: item.uuid, fromSlot: true }, { actorUuid: a.uuid, sectionId: "carried" });
     assert.equal(equippedWeapon(a, { uuid: item.uuid }, settings), null);
     assert.equal(a.items.size, 1);
+  }],
+  ["equipping one of six units preserves five stored units and uses the unit weight", async ({ a, settings }) => {
+    const medicine = makeItem(a, "medicine", "Lek", "item", { quantity: 6, description: "Na niestrawność" });
+    settings.catalog.push({ ...itemDefinition(medicine, settings), weight: 0.2 });
+    const worn = await dropItem({ type: "Item", uuid: medicine.uuid }, { actorUuid: a.uuid, kind: "gear", amount: 1 });
+    assert.notEqual(worn.id, medicine.id);
+    assert.equal(medicine.system.quantity, 5);
+    assert.equal(worn.system.quantity, 1);
+    assert.equal(worn.system.description, medicine.system.description);
+    assert.equal(equipmentSummary(a, settings).count, 1);
+    assert.equal(equipmentSummary(a, settings).weight, 0.2);
+    assert.ok(Math.abs(inventorySummary(a, settings).weight - 1.2) < 1e-10);
+    const state = inventoryState(a, settings);
+    assert.equal(state.equipped.gear.includes(worn.id), true);
+    assert.equal(state.equipped.gear.includes(medicine.id), false);
+  }],
+  ["compatible stacks merge within equipped gear and merge back when put away", async ({ a, settings }) => {
+    const stored = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    settings.catalog.push({ ...itemDefinition(stored, settings), weight: 0.25 });
+    const data = { type: "Item", uuid: stored.uuid };
+    const worn = await dropItem(data, { actorUuid: a.uuid, kind: "gear", amount: 1 });
+    const merged = await dropItem(data, { actorUuid: a.uuid, kind: "gear", amount: 2 });
+    assert.equal(merged.uuid, worn.uuid);
+    assert.equal(worn.system.quantity, 3);
+    assert.equal(stored.system.quantity, 3);
+    assert.equal(a.items.size, 2);
+    assert.equal(equipmentSummary(a, settings).weight, 0.75);
+    await unequipGear(a, worn.id);
+    assert.equal(a.items.size, 1);
+    assert.equal(stored.system.quantity, 6);
+    assert.equal(equipmentSummary(a, settings).weight, 0);
+    assert.equal(inventoryState(a, settings).equipped.gear.length, 0);
+  }],
+  ["partial transfers between characters and vehicles preserve the total and cargo weight", async ({ a, b, settings }) => {
+    const stored = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    settings.catalog.push({ ...itemDefinition(stored, settings), weight: 0.5 });
+    const cargo = await dropItem({ type: "Item", uuid: stored.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1 });
+    assert.equal(stored.system.quantity, 5);
+    assert.equal(cargo.system.quantity, 1);
+    assert.equal(inventorySummary(b, settings).weight, 0.5);
+    assert.equal(equipmentSummary(a, settings).weight, 0);
+    const worn = await dropItem({ type: "Item", uuid: cargo.uuid }, { actorUuid: a.uuid, kind: "gear" });
+    assert.equal(b.items.size, 0);
+    assert.equal(worn.system.quantity, 1);
+    assert.equal(equipmentSummary(a, settings).weight, 0.5);
+    await dropItem({ type: "Item", uuid: worn.uuid }, { actorUuid: b.uuid, sectionId: "carried" });
+    const merged = await dropItem({ type: "Item", uuid: stored.uuid }, { actorUuid: b.uuid, sectionId: "carried" });
+    assert.equal(a.items.size, 0);
+    assert.equal(b.items.size, 1);
+    assert.equal(merged.system.quantity, 6);
+    assert.equal(inventorySummary(b, settings).weight, 3);
+  }],
+  ["whole-stack moves retain the original ID while partial section moves create a separate stack", async ({ a, settings }) => {
+    const item = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    await addSection(a, "Plecak");
+    const section = inventoryState(a, settings).sections[0];
+    const moved = await dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, sectionId: section.id, amount: 6 });
+    assert.equal(moved.id, item.id);
+    assert.equal(a.items.size, 1);
+    const split = await dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, sectionId: "carried", amount: 2 });
+    assert.equal(item.system.quantity, 4);
+    assert.equal(split.system.quantity, 2);
+    const placements = inventoryState(a, settings).placements;
+    assert.equal(placements.find(p => p.itemId === item.id).sectionId, section.id);
+    assert.equal(placements.find(p => p.itemId === split.id).sectionId, "carried");
+  }],
+  ["dropping on a compatible tile follows its actual equipment location and preserves its ID", async ({ a, settings }) => {
+    const stored = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    const worn = await dropItem({ type: "Item", uuid: stored.uuid }, { actorUuid: a.uuid, kind: "gear", amount: 1 });
+    // The general inventory also displays the equipped tile; dropping there merges into the equipped stack.
+    const merged = await dropItem({ type: "Item", uuid: stored.uuid }, {
+      actorUuid: a.uuid, sectionId: "carried", mergeItemId: worn.id, amount: 2
+    });
+    assert.equal(merged.uuid, worn.uuid);
+    assert.equal(worn.system.quantity, 3);
+    assert.equal(equipmentSummary(a, settings).count, 3);
+    // Conversely, a stored target takes precedence over the surrounding drop-zone's equipment kind.
+    await dropItem({ type: "Item", uuid: worn.uuid }, { actorUuid: a.uuid, kind: "gear", mergeItemId: stored.id });
+    assert.equal(a.items.size, 1);
+    assert.equal(stored.system.quantity, 6);
+    assert.equal(equipmentSummary(a, settings).count, 0);
+  }],
+  ["stack comparison ignores document identity and key order while preserving item properties", ({ a, b }) => {
+    const first = makeItem(a, "first", "Lek", "item", { quantity: 5, description: "Ten sam", properties: { a: 1, b: 2 } }, {
+      img: "medicine.webp", flags: { CoC7: { price: 1 } }, _stats: { createdTime: 1 }, sort: 1
+    });
+    const second = makeItem(b, "second", "Lek", "item", { properties: { b: 2, a: 1 }, description: "Ten sam", quantity: 2 }, {
+      sort: 4, _stats: { createdTime: 9 }, flags: { CoC7: { price: 1 } }, img: "medicine.webp"
+    });
+    assert.equal(canStack(first, second), true);
+    second.system.description = "Inne działanie";
+    assert.equal(canStack(first, second), false);
+    assert.equal(canStack(makeItem(a, "weapon1"), makeItem(a, "weapon2")), false);
+  }],
+  ["same-name items with different data stay separate and explicit incompatible merges make no changes", async ({ a }) => {
+    const first = makeItem(a, "medicine", "Lek", "item", { quantity: 6, charges: 2 });
+    const other = makeItem(a, "different", "Lek", "item", { quantity: 4, charges: 1 });
+    await assert.rejects(dropItem({ type: "Item", uuid: first.uuid }, {
+      actorUuid: a.uuid, sectionId: "carried", mergeItemId: other.id, amount: 1
+    }), /różne dane/);
+    assert.equal(first.system.quantity, 6);
+    assert.equal(other.system.quantity, 4);
+    const split = await dropItem({ type: "Item", uuid: first.uuid }, { actorUuid: a.uuid, kind: "gear", amount: 1 });
+    assert.equal(split.system.charges, 2);
+    assert.equal(other.system.quantity, 4);
+    assert.equal(a.items.size, 3);
+  }],
+  ["invalid amounts, stale quantities and missing target stacks are rejected before mutations", async ({ a, b }) => {
+    const item = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    for (const amount of [0, -1, 0.5, 1.5, NaN, Infinity, 7, "1"]) {
+      await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount }));
+    }
+    await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1, expectedQuantity: 7 }));
+    await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1, mergeItemId: "deleted" }));
+    const weapon = makeItem(a, "weapon", "Pistolet", "weapon", { quantity: 2 });
+    await assert.rejects(dropItem({ type: "Item", uuid: weapon.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1 }));
+    assert.equal(item.system.quantity, 6);
+    assert.equal(b.items.size, 0);
+  }],
+  ["stack overflow is rejected without losing units", async ({ a, b }) => {
+    const first = makeItem(a, "first", "Lek", "item", { quantity: 1 });
+    const full = makeItem(b, "full", "Lek", "item", { quantity: Number.MAX_SAFE_INTEGER });
+    await assert.rejects(dropItem({ type: "Item", uuid: first.uuid }, { actorUuid: b.uuid, sectionId: "carried" }));
+    assert.equal(first.system.quantity, 1);
+    assert.equal(full.system.quantity, Number.MAX_SAFE_INTEGER);
+  }],
+  ["partial transfers roll back if the target cannot create or save the split stack", async ({ a, b }) => {
+    const item = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    for (const failure of ["failCreate", "cancelCreate", "failSave"]) {
+      b[failure] = true;
+      await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1 }));
+      b[failure] = false;
+      assert.equal(item.system.quantity, 6);
+      assert.equal(b.items.size, 0);
+    }
+  }],
+  ["failed or cancelled source quantity updates roll back newly created equipment", async ({ a, settings }) => {
+    const item = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    for (const failure of ["failUpdate", "cancelUpdate", "failAfterUpdate"]) {
+      item[failure] = true;
+      await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, kind: "gear", amount: 1 }));
+      item[failure] = false;
+      assert.equal(item.system.quantity, 6);
+      assert.equal(a.items.size, 1);
+      assert.equal(equipmentSummary(a, settings).count, 0);
+    }
+  }],
+  ["cancelled equipment flag updates preserve the source stack", async ({ a, settings }) => {
+    const item = makeItem(a, "medicine", "Lek", "item", { quantity: 6 });
+    a.cancelSave = true;
+    await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, kind: "gear", amount: 1 }));
+    assert.equal(item.system.quantity, 6);
+    assert.equal(a.items.size, 1);
+    assert.equal(equipmentSummary(a, settings).count, 0);
+  }],
+  ["failed source updates restore both stacks after merging", async ({ a, b }) => {
+    const first = makeItem(a, "first", "Lek", "item", { quantity: 6 });
+    const second = makeItem(b, "second", "Lek", "item", { quantity: 2 });
+    for (const failure of ["failUpdate", "cancelUpdate", "failAfterUpdate"]) {
+      first[failure] = true;
+      await assert.rejects(dropItem({ type: "Item", uuid: first.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1 }));
+      first[failure] = false;
+      assert.equal(first.system.quantity, 6);
+      assert.equal(second.system.quantity, 2);
+      assert.equal(b.items.size, 1);
+    }
+  }],
+  ["failed target updates or cancelled source deletions preserve both merge inputs", async ({ a, b }) => {
+    const first = makeItem(a, "first", "Lek", "item", { quantity: 6 });
+    const second = makeItem(b, "second", "Lek", "item", { quantity: 2 });
+    for (const failure of ["failUpdate", "cancelUpdate", "failAfterUpdate"]) {
+      second[failure] = true;
+      await assert.rejects(dropItem({ type: "Item", uuid: first.uuid }, { actorUuid: b.uuid, sectionId: "carried", amount: 1 }));
+      second[failure] = false;
+      assert.equal(first.system.quantity, 6);
+      assert.equal(second.system.quantity, 2);
+    }
+    a.cancelDelete = true;
+    await assert.rejects(dropItem({ type: "Item", uuid: first.uuid }, { actorUuid: b.uuid, sectionId: "carried" }));
+    assert.equal(first.system.quantity, 6);
+    assert.equal(second.system.quantity, 2);
+  }],
+  ["a world template can copy selected units and merge them without consuming its own stack", async ({ a }) => {
+    const template = makeItem(null, "worldMedicine", "Lek", "item", { quantity: 6 });
+    const first = await dropItem({ type: "Item", uuid: template.uuid }, { actorUuid: a.uuid, sectionId: "carried", amount: 1 });
+    const merged = await dropItem({ type: "Item", uuid: template.uuid }, { actorUuid: a.uuid, sectionId: "carried", amount: 2 });
+    assert.equal(template.system.quantity, 6);
+    assert.equal(first.uuid, merged.uuid);
+    assert.equal(first.system.quantity, 3);
+    assert.equal(a.items.size, 1);
+  }],
+  ["splitting generic armor respects slots and merges back to its original storage section", async ({ a, settings }) => {
+    const armor = makeItem(a, "armorStack", "Kamizelka", "item", { quantity: 3 });
+    settings.catalog.push({ ...itemDefinition(armor, settings), kind: "armor", weight: 4 });
+    await addSection(a, "Szafa");
+    const section = inventoryState(a, settings).sections[0];
+    await dropItem({ type: "Item", uuid: armor.uuid }, { actorUuid: a.uuid, sectionId: section.id });
+    const worn = await dropItem({ type: "Item", uuid: armor.uuid }, { actorUuid: a.uuid, kind: "armor", index: 0, amount: 1 });
+    assert.equal(armor.system.quantity, 2);
+    assert.equal(worn.system.quantity, 1);
+    assert.equal(equipmentSummary(a, settings).weight, 4);
+    const other = makeItem(a, "otherArmor", "Inny pancerz", "armor");
+    await assert.rejects(equip(a, other, "armor"));
+    await unequip(a, "armor", 0);
+    assert.equal(armor.system.quantity, 3);
+    assert.equal(a.items.has(worn.id), false);
+    assert.equal(inventoryState(a, settings).placements.find(p => p.itemId === armor.id).sectionId, section.id);
+  }],
+  ["quantity dialog supports selected units, the whole stack, cancel, close and invalid input", async ({ a }) => {
+    const item = makeItem(a, "medicine", "<Lek>", "item", { quantity: 6 });
+    let dialog;
+    globalThis.Dialog = class {
+      constructor(data) { dialog = data; }
+      render() { return this; }
+    };
+    let pending = chooseTransferAmount(item);
+    assert.match(dialog.content, /&lt;Lek&gt;/);
+    dialog.buttons.move.callback({ find: () => ({ val: () => "1" }) });
+    dialog.close();
+    assert.equal(await pending, 1);
+    pending = chooseTransferAmount(item);
+    dialog.buttons.all.callback();
+    assert.equal(await pending, 6);
+    pending = chooseTransferAmount(item);
+    dialog.buttons.cancel.callback();
+    assert.equal(await pending, null);
+    pending = chooseTransferAmount(item);
+    dialog.close();
+    assert.equal(await pending, null);
+    for (const value of ["0", "7", "1.5", "", "abc"]) {
+      pending = chooseTransferAmount(item);
+      dialog.buttons.move.callback({ find: () => ({ val: () => value }) });
+      assert.equal(await pending, null);
+    }
+    assert.equal(item.system.quantity, 6);
+  }],
+  ["single units and weapons transfer without a quantity dialog", async ({ a }) => {
+    globalThis.Dialog = class { constructor() { throw new Error("Unnecessary dialog"); } };
+    assert.equal(await chooseTransferAmount(makeItem(a, "single", "Lek", "item", { quantity: 1 })), 1);
+    assert.equal(await chooseTransferAmount(makeItem(a, "weapon")), 1);
   }],
   ["transfer moves the whole stack and updates both actor inventories", async ({ a, b, settings }) => {
     const item = makeItem(a, "w", "Rewolwer", "weapon", { quantity: 2 });
@@ -653,6 +908,51 @@ const cases = [
     assert.deepEqual(data.inventories.map(inventory => inventory.actorId), ["B", "A"]);
     assert.equal(data.inventories.at(-1).isGeneral, true);
     assert.equal(data.inventories.at(-1).sections.at(-1).id, "carried");
+
+    // Exercise the actual drop listener through the quantity dialog and explicit tile merging.
+    const medicine = makeItem(a, "hudMedicine", "Lek", "item", { quantity: 6 });
+    settings.catalog.push({ ...itemDefinition(medicine, settings), weight: 0.5 });
+    let quantityDialog;
+    globalThis.Dialog = class {
+      constructor(options) { quantityDialog = options; }
+      render() { return this; }
+    };
+    const dragToGear = mergeItemId => listeners.get(".hud-drop-zone:drop")({
+      preventDefault() {}, stopPropagation() {},
+      target: { closest: () => mergeItemId ? { dataset: { itemId: mergeItemId } } : null },
+      currentTarget: { dataset: { actorUuid: a.uuid, kind: "gear" }, classList: { remove() {} } },
+      originalEvent: { dataTransfer: { getData: () => JSON.stringify({ type: "Item", uuid: medicine.uuid }) } }
+    });
+    dragToGear();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(quantityDialog.title, "Ile sztuk przenieść?");
+    assert.equal(medicine.system.quantity, 6);
+    assert.equal(a.items.size, 2);
+    quantityDialog.buttons.move.callback({ find: () => ({ val: () => "1" }) });
+    await editInventory(async () => {});
+    assert.equal(medicine.system.quantity, 5);
+    data = await hud.getData();
+    const wornMedicine = data.equippedGear.find(tile => tile.name === "Lek");
+    assert.equal(wornMedicine.count, 1);
+    assert.equal(wornMedicine.weight, "0,5");
+    assert.equal(data.equippedSummary.weight, "0,75");
+    assert.match(wornMedicine.tooltip, /0,5 kg\/szt\./);
+    assert.match(wornMedicine.tooltip, /Łącznie: 0,5 kg/);
+    dragToGear(wornMedicine.id);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    quantityDialog.buttons.move.callback({ find: () => ({ val: () => "2" }) });
+    await editInventory(async () => {});
+    data = await hud.getData();
+    assert.equal(medicine.system.quantity, 3);
+    assert.equal(data.equippedGear.find(tile => tile.id === wornMedicine.id).count, 3);
+    assert.equal(data.equippedGear.find(tile => tile.id === wornMedicine.id).weight, "0,5");
+    assert.equal(data.equippedSummary.weight, "1,75");
+    dragToGear();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    quantityDialog.close();
+    await editInventory(async () => {});
+    assert.equal(medicine.system.quantity, 3);
+    assert.equal(equipmentSummary(a, settings).weight, 1.75);
   }]
 ];
 

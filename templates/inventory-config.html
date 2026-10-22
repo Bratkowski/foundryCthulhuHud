@@ -8,9 +8,9 @@
   <fieldset class="inventory-slot-settings"><legend>Liczba slotów na postać</legend>
     {{#each slots}}<label>{{label}} <input name="slots.{{kind}}" type="number" min="0" max="50" step="1" value="{{value}}" required></label>{{/each}}
   </fieldset>
-  <p class="inventory-help">Udźwig: 0,25 × (0,7 × SIŁA + 0,3 × BUDOWA [SIZ]). Dla 80 i 80: 20 kg. Pojazd pokazuje ciężar bez limitu. Zmniejszenie liczby slotów wyłącza wyposażenie poza limitem.</p>
+  <p class="inventory-help">Udźwig: 0,35 × (0,7 × SIŁA + 0,3 × BUDOWA [SIZ]). Dla 80 i 80: 28 kg. Pojazd pokazuje ciężar bez limitu. Zmniejszenie liczby slotów wyłącza wyposażenie poza limitem.</p>
   <label>Filtruj przedmioty <input type="search" data-action="search" placeholder="Nazwa lub typ…"></label>
-  <p class="inventory-help">Pusta waga oznacza brak danych; 0 oznacza przedmiot bez ciężaru. Noże muszą być bronią z kategorią „Nóż”. Przenoszenie obejmuje cały stos przedmiotów.</p>
+  <p class="inventory-help">Waga dotyczy jednej sztuki. Pusta waga oznacza brak danych; 0 oznacza przedmiot bez ciężaru. Noże muszą być bronią z kategorią „Nóż”. Przy przenoszeniu stosu zwykłych przedmiotów można wybrać liczbę sztuk.</p>
   <div class="inventory-catalog-heading"><span>Przedmiot / typ</span><span>Waga (kg / szt.)</span><span>Kategoria slotu</span></div>
   <div class="inventory-catalog">
     {{#each rows}}

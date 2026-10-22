@@ -9,16 +9,18 @@ HUD dla systemu **Call of Cthulhu 7e (CoC7)** w Foundry VTT. Uwzględnia ścież
 - **+ Sekcja** dodaje np. plecak albo bagażnik w ekwipunku danego aktora. Usunięcie sekcji przenosi jej zawartość do sekcji podstawowej; nie usuwa przedmiotów.
 - Strzałki **↑ / ↓** przy nazwach sekcji zmieniają ich kolejność dla danego aktora. Sekcja **Ekwipunek ogólny** pozostaje ostatnia, również w ekwipunku pojazdu. Starsze sekcje i przypisania przedmiotów są zachowywane.
 - Kafelki obejmują typy CoC7 `item`, `weapon`, `armor` i `book`. Umiejętności, zaklęcia i dane tworzenia postaci nie są liczone jako przedmioty. Najazd pokazuje ikonę, nazwę, ilość, wagę i stan wyposażenia. Dwuklik otwiera kartę przedmiotu.
-- Drag & drop pomiędzy sekcjami jednego aktora zmienia położenie. Pomiędzy aktorami przenosi cały dokument / stos, wraz z jego ilością. Wymaga prawa właściciela do obu aktorów. Przeciągnięcie z katalogu przedmiotów świata kopiuje wzorzec do ekwipunku.
+- Przy przeciąganiu stosu zwykłych przedmiotów CoC7 (`item`) pojawia się wybór liczby sztuk: **Przenieś**, **Cały stos** lub **Anuluj**. Można np. wyposażyć 1 lek z 6, zostawiając 5 w źródłowej sekcji. Działa to między sekcjami, wyposażeniem i aktorami. Pojedyncze przedmioty i bronie przenoszą się bez pytania o ilość.
+- Upuszczenie na zgodny stos łączy z nim wybrane sztuki, zachowując docelowy kafelek. Zgodne stosy w tym samym obszarze łączą się też automatycznie. Zgodność obejmuje dane przedmiotu, opis, ikonę i właściwości; sama nazwa nie wystarcza. Stosy odłożone i wyposażone pozostają oddzielne, dopóki nie zostaną przeniesione lub połączone.
+- Transfer między aktorami wymaga prawa właściciela do obu aktorów. Przeciągnięcie z katalogu przedmiotów świata kopiuje wybraną liczbę sztuk wzorca do ekwipunku, zachowując wzorzec.
 - Zmiany przedmiotów, aktorów i konfiguracji odświeżają otwarty HUD również na pozostałych klientach przez standardową synchronizację Foundry.
 
 ## Wyposażenie i testy broni
 
-Domyślnie każda postać ma **4 sloty broni, 1 slot noża i 1 slot pancerza**. Przeciągnij kafelek do pasującego slotu. Zajęty slot trzeba najpierw zwolnić przyciskiem **×**. Zdjęcie wyposażenia pozostawia przedmiot w ekwipunku. Przeciągnięcie kafelka ze slotu do sekcji również je zdejmuje.
+Domyślnie każda postać ma **4 sloty broni, 1 slot noża i 1 slot pancerza**. Przeciągnij kafelek do pasującego slotu. Zajęty slot trzeba najpierw zwolnić przyciskiem **×**, chyba że łączysz zgodne stosy. Zdjęcie wyposażenia pozostawia przedmiot w ekwipunku. Przeciągnięcie kafelka ze slotu do sekcji również je zdejmuje.
 
-Obszar **Pozostałe przedmioty przy sobie** mieści zwykłe przedmioty, np. latarkę, amunicję lub książkę, bez limitu liczby kafelków. Przeciągnięcie rzeczy tutaj oznacza jej wyposażenie. **×** albo przeciągnięcie z tego obszaru do sekcji odkłada przedmiot. Ten sam przedmiot nie może być wyposażony dwukrotnie.
+Obszar **Pozostałe przedmioty przy sobie** mieści zwykłe przedmioty, np. latarkę, amunicję lub książkę, bez limitu liczby kafelków. Przeciągnięcie rzeczy tutaj oznacza wyposażenie wybranej liczby sztuk. **×** odkłada cały wyposażony stos do jego sekcji i łączy ze zgodnym odłożonym stosem. Przeciągnięcie do sekcji pozwala odłożyć wybraną liczbę sztuk. Ten sam egzemplarz nie może być wyposażony dwukrotnie.
 
-Na górze wyposażenia widać **ciężar w kg, limit udźwigu i liczbę wyposażonych sztuk**. Kafelki pokazują wagę całego stosu. Do obciążenia badacza liczą się wyłącznie aktywnie wyposażone bronie, noże, pancerze i pozostałe rzeczy przy sobie. Zmiana ilości, wag, wyposażenia lub transfer aktualizuje wyliczenie.
+Na górze wyposażenia widać **ciężar w kg, limit udźwigu i liczbę wyposażonych sztuk**. Waga w konfiguracji i na kafelku dotyczy **jednej sztuki** i jest oznaczona **kg/szt.** Podpowiedź podaje także łączny ciężar stosu. Do obciążenia badacza liczą się wyłącznie aktywnie wyposażone bronie, noże, pancerze i pozostałe rzeczy przy sobie: `waga jednej sztuki × liczba wyposażonych sztuk`. Zmiana ilości, wag, wyposażenia lub transfer aktualizuje wyliczenie.
 
 W konfiguracji MG może nadać broni kategorię **Nóż**. Nazwy zawierające „knife”, „dagger”, „nóż” lub „sztylet” otrzymują ją domyślnie. Ogólnemu przedmiotowi można nadać kategorię **Pancerz**, również w wersjach CoC7 bez osobnego typu `armor`.
 
@@ -38,7 +40,7 @@ Otwórz **Ustawienia → Ustawienia modułów → Cthulhu player Hud → Konfigu
 - Katalog obejmuje przedmioty świata oraz osadzone przedmioty wszystkich aktorów. Wspólna waga obowiązuje dla tej samej nazwy i typu, bez rozróżniania wielkości liter i skrajnych spacji. Zmiana nazwy tworzy nowe dopasowanie.
 - Pusta waga oznacza **brak danych**, a `0` oznacza znany zerowy ciężar. HUD sygnalizuje niepełne wyliczenie, gdy brakuje wag. Wartość systemowa `system.weight` nie jest używana ani modyfikowana.
 - Ciężar przy sobie to suma `waga jednostkowa × ilość` wyłącznie **wyposażonych** przedmiotów aktora, liczonych tylko raz. Rzeczy odłożone w sekcjach nie obciążają badacza. Pojazd pokazuje ciężar całego swojego ładunku; nie obciąża on postaci.
-- Udźwig postaci: **U = 0,25 × (0,7 × SIŁA [STR] + 0,3 × BUDOWA [SIZ])**. Dla 80 i 80 wynosi **20 kg**. Brak cech oznacza brak obliczonego limitu. Pojazd pokazuje tylko ciężar.
+- Udźwig postaci: **U = 0,35 × (0,7 × SIŁA [STR] + 0,3 × BUDOWA [SIZ])**. Dla 80 i 80 wynosi **28 kg**. Brak cech oznacza brak obliczonego limitu. Pojazd pokazuje tylko ciężar.
 - Przekroczenie udźwigu jest wyróżniane w HUD-zie; nie nakłada automatycznych kar.
 - Zmniejszenie liczby slotów wyłącza przypisania poza aktualnym limitem. Zapis kolejnej zmiany wyposażenia usuwa te nieaktywne przypisania.
 
@@ -48,13 +50,13 @@ Wagi i limity przechowywane są w ustawieniu świata `cthulhu-hud.inventoryConfi
 
 ## Sprawdzenie
 
-Testy bez zależności zewnętrznych: Node.js 18 lub nowszy, następnie `npm test`. Obejmują ciężar tylko wyposażonych przedmiotów, zwykłe rzeczy przy sobie, ilości, sloty, kolejność sekcji i ekwipunków, uprawnienia, transfery i ich cofanie, przypisania umiejętności, blokadę makr, walidację konfiguracji oraz integrację HUD-u z atrapami API Foundry.
+Testy bez zależności zewnętrznych: Node.js 18 lub nowszy, następnie `npm test`. Obejmują ciężar tylko wyposażonych sztuk, dzielenie i zgodność stosów, łączenie i cofanie nieudanych transferów, okno wyboru ilości i anulowanie, sloty, kolejność sekcji i ekwipunków, uprawnienia, przypisania umiejętności, blokadę makr, walidację konfiguracji oraz integrację HUD-u z atrapami API Foundry.
 
 Przed użyciem na sesji sprawdź również w uruchomionym świecie CoC7:
 
 1. Przycisk jest w Tokens; HUD rozwija się i pokazuje przedmioty istniejącej postaci.
 2. Dwie sesje użytkowników widzą zmiany ilości, sekcji, wyposażenia i wag bez ponownego otwierania HUD-u.
-3. Przedmiot można przenieść z postaci do pojazdu i z powrotem; pojawia się tylko u aktualnego właściciela.
+3. Ze stosu 6 leków wyposażyć 1: w źródle zostaje 5, przy sobie jest 1, a obciążenie rośnie o wagę jednej sztuki. Po **×** zgodny stos ma ponownie 6. Sprawdź też podział i łączenie między postacią a pojazdem oraz anulowanie okna ilości.
 4. Makro niewyposażonej broni nie tworzy karty czatu; po przypisaniu jej do slotu test działa, także z Shift.
 5. Eksport i import zachowują wagę `0`, wagę ułamkową i pustą; błędne dane nie zapisują się.
 

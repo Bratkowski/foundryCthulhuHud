@@ -26,6 +26,30 @@ export function quantity(item) {
   return Number.isFinite(number) && number >= 0 ? number : 1;
 }
 
+// CoC7 generic items have a quantity field; weapons, armor and books do not.
+export function isStackable(item) {
+  return item?.type === "item" && Number.isSafeInteger(item.system?.quantity) && item.system.quantity > 0;
+}
+
+function sortedData(value) {
+  if (Array.isArray(value)) return Array.from(value, sortedData);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, sortedData(value[key])]));
+  }
+  return value;
+}
+
+function stackSignature(item) {
+  const data = item.toObject();
+  for (const key of ["_id", "sort", "folder", "ownership", "_stats"]) delete data[key];
+  delete data.system.quantity;
+  return JSON.stringify(sortedData(data));
+}
+
+export function canStack(first, second) {
+  return isStackable(first) && isStackable(second) && stackSignature(first) === stackSignature(second);
+}
+
 export function itemDefinition(item, config) {
   return config.catalog.find(row => row.key === itemKey(item)) ?? {
     key: itemKey(item), name: item.name, type: item.type, weight: null, kind: defaultKind(item)
@@ -38,7 +62,7 @@ export function capacity(actor) {
   const str = traits?.str?.value;
   const siz = traits?.siz?.value;
   if (str == null || siz == null || !Number.isFinite(Number(str)) || !Number.isFinite(Number(siz))) return null;
-  return Math.max(0, 0.25 * (0.7 * Number(str) + 0.3 * Number(siz)));
+  return Math.max(0, 0.35 * (0.7 * Number(str) + 0.3 * Number(siz)));
 }
 
 export function inventoryState(actor, config) {

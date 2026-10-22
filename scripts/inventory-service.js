@@ -1,6 +1,7 @@
 import {
   MODULE_ID, DEFAULT_SECTION, DEFAULT_SLOTS, PHYSICAL_TYPES, SLOT_TYPES, EQUIPMENT_TYPES,
-  isInventoryActor, inventoryState, itemDefinition, itemKey, quantity, weaponForCheck, reorderIds, orderedInventories
+  isInventoryActor, inventoryState, equippedIds, itemDefinition, itemKey, quantity, isStackable, canStack,
+  weaponForCheck, reorderIds, orderedInventories
 } from "./inventory-model.js";
 
 export function config() {
@@ -57,6 +58,8 @@ export async function unequip(actor, kind, index) {
   assertOwner(actor);
   const state = inventoryState(actor, config());
   if (!SLOT_TYPES.includes(kind) || !Number.isInteger(index) || index < 0 || index >= state.equipped[kind].length) return;
+  const item = actor.items.get(state.equipped[kind][index]);
+  if (isStackable(item)) return dropItem({ type: "Item", uuid: item.uuid }, itemLocation(actor, item.id, state, true));
   state.equipped[kind][index] = null;
   await saveState(actor, state);
 }
@@ -64,6 +67,8 @@ export async function unequip(actor, kind, index) {
 export async function unequipGear(actor, itemId) {
   assertOwner(actor);
   const state = inventoryState(actor, config());
+  const item = actor.items.get(itemId);
+  if (isStackable(item)) return dropItem({ type: "Item", uuid: item.uuid }, itemLocation(actor, itemId, state, true));
   state.equipped.gear = state.equipped.gear.filter(id => id !== itemId);
   await saveState(actor, state);
 }
@@ -112,6 +117,86 @@ function rebindWeaponSkills(itemData, source, destination) {
   }
 }
 
+function itemLocation(actor, itemId, state, storageOnly = false) {
+  if (!storageOnly) {
+    for (const kind of EQUIPMENT_TYPES) {
+      const index = state.equipped[kind].indexOf(itemId);
+      if (index >= 0) return { actorUuid: actor.uuid, kind, index };
+    }
+  }
+  return { actorUuid: actor.uuid, sectionId: state.placements.find(p => p.itemId === itemId)?.sectionId ?? DEFAULT_SECTION };
+}
+
+function inLocation(item, target, state) {
+  if (target.kind === "gear") return state.equipped.gear.includes(item.id);
+  if (target.kind) return state.equipped[target.kind]?.[target.index] === item.id;
+  return !equippedIds(state).has(item.id) && state.placements.find(p => p.itemId === item.id)?.sectionId === target.sectionId;
+}
+
+function validateTarget(destination, item, target, state, settings) {
+  if (target.kind) {
+    if (destination.type !== "character" || !EQUIPMENT_TYPES.includes(target.kind) || itemDefinition(item, settings).kind !== target.kind) {
+      throw new Error("Przedmiot nie pasuje do tego slotu. Kategorię ustawia MG w konfiguracji ekwipunku.");
+    }
+    if (quantity(item) <= 0) throw new Error("Nie można wyposażyć przedmiotu o zerowej ilości.");
+    if (target.kind !== "gear" && (!Number.isInteger(target.index) || target.index < 0 || target.index >= state.equipped[target.kind].length)) {
+      throw new Error("Ten slot już nie istnieje.");
+    }
+  } else if (!state.sections.some(section => section.id === target.sectionId)) {
+    throw new Error("Ta sekcja już nie istnieje.");
+  }
+}
+
+function placeItem(state, itemId, target, homeSection = DEFAULT_SECTION) {
+  const placement = state.placements.find(p => p.itemId === itemId);
+  if (!target.kind) placement.sectionId = target.sectionId;
+  else if (homeSection) placement.sectionId = homeSection;
+  putAway(state, itemId);
+  if (target.kind === "gear") state.equipped.gear.push(itemId);
+  else if (target.kind) state.equipped[target.kind][target.index] = itemId;
+}
+
+async function setQuantity(item, value) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error("Ilość musi być dodatnią liczbą całkowitą.");
+  await item.update({ "system.quantity": value });
+  const current = item.parent ? item.parent.items.get(item.id) : item;
+  if (!current || quantity(current) !== value) throw new Error("Zmiana ilości przedmiotu została anulowana.");
+}
+
+async function restoreQuantity(item, value) {
+  const current = item.parent?.items.get(item.id) ?? (!item.parent ? item : null);
+  if (current && quantity(current) !== value) await setQuantity(current, value);
+}
+
+async function removeItem(actor, itemId) {
+  const removed = await actor.deleteEmbeddedDocuments("Item", [itemId]);
+  if (!removed.some(item => item.id === itemId) || actor.items.get(itemId)) throw new Error("Usunięcie źródłowego stosu zostało anulowane.");
+}
+
+async function consumeSource(item, amount, available, progress) {
+  if (!item.parent) return; // World-directory items are copied as templates.
+  const current = item.parent.items.get(item.id);
+  if (!current || quantity(current) !== available) throw new Error("Ilość w źródłowym stosie zmieniła się. Spróbuj ponownie.");
+  if (amount < available) {
+    progress.sourceQuantityChanged = true;
+    await setQuantity(current, available - amount);
+  } else {
+    try { await removeItem(item.parent, item.id); }
+    catch (error) {
+      // A lost response after deletion must not roll back an already completed move.
+      if (item.parent.items.get(item.id)) throw error;
+    }
+  }
+}
+
+async function recoverTransfer(action) {
+  try { await action(); }
+  catch (error) {
+    console.error(`${MODULE_ID} | Cofnięcie przeniesienia`, error);
+    ui.notifications.error("Nie udało się w pełni cofnąć przeniesienia. Sprawdź ilości w obu ekwipunkach przed kolejną próbą.");
+  }
+}
+
 export async function dropItem(data, target) {
   const destination = await fromUuid(target.actorUuid);
   assertOwner(destination);
@@ -123,40 +208,62 @@ export async function dropItem(data, target) {
   else if (!item.testUserPermission(game.user, "OBSERVER")) throw new Error("Nie masz dostępu do tego przedmiotu.");
   const settings = config();
   const state = inventoryState(destination, settings);
-  if (target.kind) {
-    const definition = itemDefinition(item, settings);
-    if (destination.type !== "character" || !EQUIPMENT_TYPES.includes(target.kind) || definition.kind !== target.kind) {
-      throw new Error("Przedmiot nie pasuje do tego slotu. Kategorię ustawia MG w konfiguracji ekwipunku.");
+  const available = quantity(item);
+  const amount = target.amount ?? available;
+  if (target.expectedQuantity !== undefined && target.expectedQuantity !== available) throw new Error("Ilość w źródłowym stosie zmieniła się. Spróbuj ponownie.");
+  if (!Number.isFinite(amount) || amount <= 0 || amount > available) throw new Error("Nieprawidłowa liczba sztuk do przeniesienia.");
+  if (isStackable(item) && !Number.isSafeInteger(amount)) throw new Error("Przenoś wyłącznie całe sztuki przedmiotów.");
+  if (amount < available && !isStackable(item)) throw new Error("Ten typ przedmiotu nie obsługuje dzielenia na sztuki.");
+
+  let merge = null;
+  if (isStackable(item) && target.mergeItemId) {
+    const candidate = destination.items.get(target.mergeItemId);
+    if (!candidate) throw new Error("Docelowy stos już nie istnieje.");
+    if (candidate.uuid !== item.uuid && itemKey(candidate) === itemKey(item)) {
+      if (!canStack(item, candidate)) throw new Error("Te stosy mają różne dane przedmiotu i nie mogą zostać połączone.");
+      merge = candidate;
+      target = { ...target, kind: undefined, index: undefined, sectionId: undefined, ...itemLocation(destination, candidate.id, state) };
     }
-    if (quantity(item) <= 0) throw new Error("Nie można wyposażyć przedmiotu o zerowej ilości.");
-    if (target.kind !== "gear" && (!Number.isInteger(target.index) || target.index < 0 || target.index >= state.equipped[target.kind].length)) throw new Error("Ten slot już nie istnieje.");
-    if (target.kind !== "gear" && state.equipped[target.kind][target.index] && !(source?.uuid === destination.uuid && state.equipped[target.kind][target.index] === item.id)) {
-      throw new Error("Slot jest zajęty. Najpierw zdejmij wyposażenie przyciskiem ×.");
+  }
+  validateTarget(destination, item, target, state, settings);
+  if (!merge && isStackable(item)) {
+    merge = destination.items.find(candidate => candidate.uuid !== item.uuid && canStack(item, candidate) && inLocation(candidate, target, state));
+  }
+  const sameActor = source?.uuid === destination.uuid;
+  const occupied = target.kind && target.kind !== "gear" ? state.equipped[target.kind][target.index] : null;
+  if (occupied && occupied !== merge?.id && !(sameActor && occupied === item.id && amount === available)) {
+    throw new Error("Slot jest zajęty. Najpierw zdejmij wyposażenie przyciskiem ×.");
+  }
+  const progress = { sourceQuantityChanged: false };
+  if (merge) {
+    const previous = quantity(merge);
+    if (!Number.isSafeInteger(previous + amount)) throw new Error("Docelowy stos ma zbyt dużą liczbę sztuk.");
+    try {
+      await setQuantity(merge, previous + amount);
+      await consumeSource(item, amount, available, progress);
+      return merge;
+    } catch (error) {
+      await recoverTransfer(async () => {
+        if (progress.sourceQuantityChanged) await restoreQuantity(item, available);
+        await restoreQuantity(merge, previous);
+      });
+      throw error;
     }
-  } else if (!state.sections.some(section => section.id === target.sectionId)) {
-    throw new Error("Ta sekcja już nie istnieje.");
   }
 
-  if (source?.uuid === destination.uuid) {
-    if (target.kind) {
-      putAway(state, item.id);
-      if (target.kind === "gear") state.equipped.gear.push(item.id);
-      else state.equipped[target.kind][target.index] = item.id;
-    } else {
-      state.placements.find(p => p.itemId === item.id).sectionId = target.sectionId;
-      // Dropping an equipped tile in a bag explicitly puts it away.
-      if (data.fromSlot) {
-        putAway(state, item.id);
-      }
-    }
+  if (sameActor && amount === available) {
+    const home = state.placements.find(p => p.itemId === item.id)?.sectionId;
+    placeItem(state, item.id, target, home);
     await saveState(destination, state);
-    return;
+    if (!inLocation(item, target, inventoryState(destination, settings))) throw new Error("Zapis położenia przedmiotu został anulowany.");
+    return item;
   }
 
   // Create first; remove the source only once the target item and placement are saved.
   const itemData = item.toObject();
   delete itemData._id;
   delete itemData.folder;
+  if (isStackable(item)) itemData.system.quantity = amount;
   rebindWeaponSkills(itemData, source, destination);
   // CoC7's actor workflow imports weapon skills and reads character-only schema fields.
   // Skill references are already rebound above; the Item workflow keeps normal validation and hooks.
@@ -166,23 +273,19 @@ export async function dropItem(data, target) {
   if (!created) throw new Error("Nie udało się dodać przedmiotu do docelowego ekwipunku.");
   try {
     const latest = inventoryState(destination, settings);
+    validateTarget(destination, created, target, latest, settings);
     if (target.kind && target.kind !== "gear" && latest.equipped[target.kind]?.[target.index]) throw new Error("Slot został zajęty podczas przenoszenia.");
-    if (!target.kind && !latest.sections.some(section => section.id === target.sectionId)) throw new Error("Sekcja została usunięta podczas przenoszenia.");
-    latest.placements.find(p => p.itemId === created.id).sectionId = target.sectionId ?? DEFAULT_SECTION;
-    if (target.kind === "gear") latest.equipped.gear.push(created.id);
-    else if (target.kind) latest.equipped[target.kind][target.index] = created.id;
+    const home = sameActor ? state.placements.find(p => p.itemId === item.id)?.sectionId : DEFAULT_SECTION;
+    placeItem(latest, created.id, target, home);
     await saveState(destination, latest);
-    if (source) {
-      const removed = await source.deleteEmbeddedDocuments("Item", [item.id]);
-      if (!removed.some(document => document.id === item.id)) throw new Error("Przeniesienie anulowane: przedmiot pozostał w źródłowym ekwipunku.");
-    }
+    if (!inLocation(created, target, inventoryState(destination, settings))) throw new Error("Zapis położenia przedmiotu został anulowany.");
+    await consumeSource(item, amount, available, progress);
+    return created;
   } catch (error) {
-    try {
-      await destination.deleteEmbeddedDocuments("Item", [created.id]);
-    } catch (rollbackError) {
-      console.error(`${MODULE_ID} | Cofnięcie przeniesienia`, rollbackError);
-      ui.notifications.error("Nie udało się cofnąć przeniesienia. Sprawdź oba ekwipunki przed kolejną próbą.");
-    }
+    await recoverTransfer(async () => {
+      if (progress.sourceQuantityChanged) await restoreQuantity(item, available);
+      await removeItem(destination, created.id);
+    });
     throw error;
   }
 }

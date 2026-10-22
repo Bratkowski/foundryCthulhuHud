@@ -29,7 +29,7 @@
         <span>{{equippedSummary.count}} szt. wyposażonych{{#if equippedSummary.overloaded}} · Przekroczony udźwig{{/if}}</span>
       </div>
       {{#if equippedSummary.unknown}}<p class="hud-hint hud-unknown-weight">Wyposażone przedmioty bez wagi: {{equippedSummary.unknown}}. Podany ciężar jest niepełny.</p>{{/if}}
-      <p class="hud-hint">Przeciągnij przedmiot do pasującego slotu. × zdejmuje wyposażenie.</p>
+      <p class="hud-hint">Przeciągnij przedmiot do pasującego slotu; przy stosie wybierz liczbę sztuk. × odkłada cały wyposażony stos.</p>
       {{#each equipment}}
       <div class="hud-equipment-group">
         <span class="hud-slot-label">{{label}}</span>
@@ -65,6 +65,7 @@
       <button type="button" data-action="attach-inventory"><i class="fa-solid fa-plus" aria-hidden="true"></i> Pokaż ekwipunek</button>
     </div>
     <div class="hud-inventories">
+      <p class="hud-hint">Upuść na zgodny stos, aby połączyć wybrane sztuki. Zgodne stosy w tym samym obszarze łączą się automatycznie.</p>
       {{#each inventories}}
       <section class="hud-inventory" data-actor-uuid="{{actorUuid}}">
         <header class="hud-inventory-header">
