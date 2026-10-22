@@ -24,13 +24,18 @@
     {{#if hasActor}}
     <section class="hud-equipment" aria-label="Aktywne wyposażenie">
       <h3>Wyposażenie przy sobie</h3>
+      <div class="hud-equipped-summary {{#if equippedSummary.overloaded}}is-overloaded{{/if}}" aria-live="polite">
+        <strong>{{name}}: {{equippedSummary.weight}} kg{{#if equippedSummary.hasLimit}} / {{equippedSummary.limit}} kg{{/if}}</strong>
+        <span>{{equippedSummary.count}} szt. wyposażonych{{#if equippedSummary.overloaded}} · Przekroczony udźwig{{/if}}</span>
+      </div>
+      {{#if equippedSummary.unknown}}<p class="hud-hint hud-unknown-weight">Wyposażone przedmioty bez wagi: {{equippedSummary.unknown}}. Podany ciężar jest niepełny.</p>{{/if}}
       <p class="hud-hint">Przeciągnij przedmiot do pasującego slotu. × zdejmuje wyposażenie.</p>
       {{#each equipment}}
       <div class="hud-equipment-group">
         <span class="hud-slot-label">{{label}}</span>
         <div class="hud-slot-row">
           {{#each slots}}
-          <div class="hud-equipment-slot hud-drop-zone" data-actor-uuid="{{actorUuid}}" data-kind="{{kind}}" data-index="{{index}}">
+          <div class="hud-equipment-slot hud-equipped-item hud-drop-zone" data-actor-uuid="{{actorUuid}}" data-kind="{{kind}}" data-index="{{index}}">
             {{#if item}}
               {{> "modules/cthulhu-hud/templates/item-tile.html" item}}
               <button type="button" class="hud-unequip" data-action="unequip" data-actor-uuid="{{actorUuid}}" data-kind="{{kind}}" data-index="{{index}}" title="Zdejmij wyposażenie" aria-label="Zdejmij wyposażenie">×</button>
@@ -42,6 +47,17 @@
         </div>
       </div>
       {{/each}}
+      <div class="hud-equipped-gear">
+        <h4>Pozostałe przedmioty przy sobie</h4>
+        <div class="hud-item-grid hud-gear-grid hud-drop-zone" data-actor-uuid="{{equipmentActorUuid}}" data-kind="gear">
+          {{#each equippedGear}}
+          <div class="hud-gear-item hud-equipped-item">
+            {{> "modules/cthulhu-hud/templates/item-tile.html" this}}
+            <button type="button" class="hud-unequip" data-action="unequip-gear" data-actor-uuid="{{actorUuid}}" data-item-id="{{id}}" title="Odłóż do ekwipunku" aria-label="Odłóż {{name}} do ekwipunku">×</button>
+          </div>
+          {{else}}<span class="hud-empty-inventory">Przeciągnij tu np. latarkę lub amunicję</span>{{/each}}
+        </div>
+      </div>
     </section>
     {{/if}}
     <div class="hud-inventory-toolbar">
@@ -52,15 +68,30 @@
       {{#each inventories}}
       <section class="hud-inventory" data-actor-uuid="{{actorUuid}}">
         <header class="hud-inventory-header">
-          <h3><i class="fa-solid {{#if isVehicle}}fa-car{{else}}fa-user{{/if}}" aria-hidden="true"></i> {{name}}</h3>
+          <h3><i class="fa-solid {{#if isVehicle}}fa-car{{else}}fa-user{{/if}}" aria-hidden="true"></i> {{#if isGeneral}}Ekwipunek badacza — {{/if}}{{name}}</h3>
+          {{#if detachable}}
+          <div class="hud-order-buttons" role="group" aria-label="Kolejność ekwipunku {{name}}">
+            <button type="button" data-action="move-inventory" data-actor-id="{{actorId}}" data-direction="up" {{#unless canMoveUp}}disabled{{/unless}} title="Przenieś ekwipunek wyżej" aria-label="Przenieś ekwipunek {{name}} wyżej">↑</button>
+            <button type="button" data-action="move-inventory" data-actor-id="{{actorId}}" data-direction="down" {{#unless canMoveDown}}disabled{{/unless}} title="Przenieś ekwipunek niżej" aria-label="Przenieś ekwipunek {{name}} niżej">↓</button>
+          </div>
+          {{/if}}
           <button type="button" data-action="add-section" data-actor-uuid="{{actorUuid}}" title="Dodaj np. plecak lub bagażnik">+ Sekcja</button>
           {{#if detachable}}<button type="button" data-action="detach-inventory" data-actor-id="{{actorId}}" title="Ukryj dodatkowy ekwipunek" aria-label="Ukryj dodatkowy ekwipunek">−</button>{{/if}}
         </header>
-        <p class="hud-weight {{#if overloaded}}is-overloaded{{/if}}">Ciężar: {{weight}} kg{{#if hasLimit}} / {{limit}} kg{{/if}}{{#if overloaded}} · Przekroczony udźwig{{/if}}</p>
+        <p class="hud-weight {{#if overloaded}}is-overloaded{{/if}}">{{#if isVehicle}}Ładunek{{else}}Wyposażone przy sobie{{/if}}: {{weight}} kg{{#if hasLimit}} / {{limit}} kg{{/if}} · {{count}} szt.{{#if overloaded}} · Przekroczony udźwig{{/if}}</p>
         {{#if unknown}}<p class="hud-hint hud-unknown-weight">Bez ustalonej wagi: {{unknown}}. Ciężar jest niepełny.</p>{{/if}}
         {{#each sections}}
         <section class="hud-inventory-section">
-          <header><h4>{{name}}</h4>{{#if removable}}<button type="button" data-action="remove-section" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}" title="Usuń sekcję; rzeczy wrócą do Ekwipunku" aria-label="Usuń sekcję">×</button>{{/if}}</header>
+          <header>
+            <h4>{{name}}</h4>
+            {{#if removable}}
+            <div class="hud-order-buttons" role="group" aria-label="Kolejność sekcji {{name}}">
+              <button type="button" data-action="move-section" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}" data-direction="up" {{#unless canMoveUp}}disabled{{/unless}} title="Przenieś sekcję wyżej" aria-label="Przenieś {{name}} wyżej">↑</button>
+              <button type="button" data-action="move-section" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}" data-direction="down" {{#unless canMoveDown}}disabled{{/unless}} title="Przenieś sekcję niżej" aria-label="Przenieś {{name}} niżej">↓</button>
+            </div>
+            <button type="button" data-action="remove-section" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}" title="Usuń sekcję; rzeczy wrócą do Ekwipunku ogólnego" aria-label="Usuń sekcję">×</button>
+            {{/if}}
+          </header>
           <div class="hud-item-grid hud-drop-zone" data-actor-uuid="{{actorUuid}}" data-section-id="{{id}}">
             {{#each items}}{{> "modules/cthulhu-hud/templates/item-tile.html" this}}{{else}}<span class="hud-empty-inventory">Przeciągnij tutaj przedmiot</span>{{/each}}
           </div>

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import {
   MODULE_ID, DEFAULT_SLOTS, capacity, defaultKind, itemKey, itemDefinition, inventoryState,
-  inventorySummary, validateConfig, equippedWeapon
+  inventorySummary, equipmentSummary, orderedInventories, validateConfig, equippedWeapon
 } from "../scripts/inventory-model.js";
 import {
-  dropItem, addSection, removeSection, unequip, worldCatalog, installWeaponGuard, editInventory
+  dropItem, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, worldCatalog, installWeaponGuard, editInventory
 } from "../scripts/inventory-service.js";
 
 class Collection extends Map {
@@ -60,11 +60,16 @@ function fixture() {
   const settings = { slots: { ...DEFAULT_SLOTS }, catalog: [] };
   const a = new FakeActor("A");
   const b = new FakeActor("B", "vehicle");
+  const userFlags = {};
   globalThis.calls = { actor: [], macro: [], roll: [], warnings: [] };
   globalThis.game = {
     actors: new Collection([[a.id, a], [b.id, b]]), items: new Collection(), scenes: new Collection(),
     settings: { get: () => settings },
-    user: { isGM: true, character: a, getFlag: () => [] },
+    user: {
+      isGM: true, character: a,
+      getFlag: (module, key) => structuredClone(userFlags[key]),
+      async setFlag(module, key, value) { userFlags[key] = structuredClone(value); return this; }
+    },
     CoC7: { macros: { weaponCheck(data, event) {
       calls.macro.push(data);
       return game.user.character.weaponCheck(data, event.shiftKey);
@@ -127,7 +132,7 @@ const cases = [
   ["new sections and deleted sections preserve every physical item", async ({ a, settings }) => {
     const item = makeItem(a, "bag", "Latarka", "item");
     await addSection(a, "Plecak");
-    const section = inventoryState(a, settings).sections[1];
+    const section = inventoryState(a, settings).sections.find(section => section.id !== "carried");
     await dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, sectionId: section.id });
     assert.equal(inventoryState(a, settings).placements[0].sectionId, section.id);
     await removeSection(a, section.id);
@@ -143,6 +148,120 @@ const cases = [
     await unequip(a, "weapon", 1);
     await equip(a, weapons[0], "weapon", 1);
     assert.deepEqual(inventoryState(a, settings).equipped.weapon, [null, "w0", "w2", "w3"]);
+  }],
+  ["general gear has an unlimited equipment area and each item is equipped only once", async ({ a, settings }) => {
+    const items = Array.from({ length: 8 }, (_, i) => makeItem(a, `gear${i}`, `Przedmiot ${i}`, "item"));
+    for (const item of items) await equip(a, item, "gear");
+    await equip(a, items[0], "gear");
+    const state = inventoryState(a, settings);
+    assert.equal(state.equipped.gear.length, 8);
+    assert.equal(new Set(state.equipped.gear).size, 8);
+    assert.equal(state.equipped.weapon.filter(Boolean).length, 0);
+    await unequipGear(a, items[3].id);
+    assert.equal(inventoryState(a, settings).equipped.gear.includes(items[3].id), false);
+    assert.equal(a.items.size, 8);
+  }],
+  ["character burden counts only equipped stacks and weapons, excluding storage and vehicles", async ({ a, b, settings }) => {
+    const gear = makeItem(a, "ammo", "Amunicja", "item", { quantity: 3 });
+    const weapon = makeItem(a, "weapon", "Pistolet");
+    const stored = makeItem(a, "heavy", "Ciężka skrzynia", "item");
+    makeItem(a, "unknown", "Nieznany przedmiot", "item");
+    const cargo = makeItem(b, "cargo", "Ładunek", "item");
+    for (const [item, weight] of [[gear, 0.5], [weapon, 2], [stored, 1000], [cargo, 40]]) {
+      settings.catalog.push({ ...itemDefinition(item, settings), weight });
+    }
+    await equip(a, gear, "gear");
+    await equip(a, weapon);
+    let summary = equipmentSummary(a, settings);
+    assert.equal(summary.weight, 3.5);
+    assert.equal(summary.count, 4);
+    assert.equal(summary.unknown, 0);
+    assert.equal(summary.overloaded, false);
+    assert.equal(inventorySummary(a, settings).weight, 1003.5);
+    assert.equal(inventorySummary(b, settings).weight, 40);
+    await unequip(a, "weapon", 0);
+    summary = equipmentSummary(a, settings);
+    assert.equal(summary.weight, 1.5);
+    assert.equal(summary.count, 3);
+    await equip(a, stored, "gear");
+    assert.equal(equipmentSummary(a, settings).overloaded, true);
+  }],
+  ["only equipped unknown weights make carried weight incomplete; zero is known", async ({ a, settings }) => {
+    const unknown = makeItem(a, "unknownGear", "Latarka", "item");
+    const zero = makeItem(a, "zeroGear", "Kartka", "item");
+    settings.catalog.push({ ...itemDefinition(zero, settings), weight: 0 });
+    assert.equal(equipmentSummary(a, settings).unknown, 0);
+    await equip(a, zero, "gear");
+    assert.equal(equipmentSummary(a, settings).unknown, 0);
+    await equip(a, unknown, "gear");
+    assert.equal(equipmentSummary(a, settings).unknown, 1);
+    assert.equal(equipmentSummary(a, settings).count, 2);
+  }],
+  ["putting general gear away removes it from carried weight and preserves its section", async ({ a, settings }) => {
+    const item = makeItem(a, "torch", "Latarka", "item", { quantity: 2 });
+    settings.catalog.push({ ...itemDefinition(item, settings), weight: 0.3 });
+    await addSection(a, "Szafka");
+    const section = inventoryState(a, settings).sections[0];
+    await equip(a, item, "gear");
+    assert.equal(equipmentSummary(a, settings).weight, 0.6);
+    await dropItem({ type: "Item", uuid: item.uuid, fromSlot: true }, { actorUuid: a.uuid, sectionId: section.id });
+    assert.equal(equipmentSummary(a, settings).weight, 0);
+    assert.equal(inventoryState(a, settings).placements[0].sectionId, section.id);
+    assert.equal(a.items.size, 1);
+  }],
+  ["vehicle gear can be transferred directly into carried equipment, with rollback on failure", async ({ a, b, settings }) => {
+    const item = makeItem(b, "vehicleTorch", "Latarka", "item", { quantity: 2 });
+    settings.catalog.push({ ...itemDefinition(item, settings), weight: 0.5 });
+    b.failDelete = true;
+    await assert.rejects(dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, kind: "gear" }));
+    assert.equal(a.items.size, 0);
+    assert.equal(b.items.size, 1);
+    assert.equal(equipmentSummary(a, settings).weight, 0);
+    b.failDelete = false;
+    await dropItem({ type: "Item", uuid: item.uuid }, { actorUuid: a.uuid, kind: "gear" });
+    assert.equal(b.items.size, 0);
+    assert.equal(equipmentSummary(a, settings).weight, 1);
+    assert.equal(inventoryState(a, settings).equipped.gear.length, 1);
+  }],
+  ["general gear sanitation rejects stale, duplicate, empty and weapon IDs", ({ a, settings }) => {
+    const gear = makeItem(a, "validGear", "Latarka", "item");
+    const weapon = makeItem(a, "wrongGear", "Pistolet");
+    makeItem(a, "emptyGear", "Pusta paczka", "item", { quantity: 0 });
+    a.flags.inventory = { equipped: { gear: [gear.id, gear.id, "deleted", "emptyGear", weapon.id] } };
+    assert.deepEqual(inventoryState(a, settings).equipped.gear, [gear.id]);
+    assert.equal(equippedWeapon(a, { uuid: weapon.uuid }, settings), null);
+  }],
+  ["section arrows persist order while the legacy general inventory remains last", async ({ a, settings }) => {
+    a.flags.inventory = { sections: [{ id: "carried", name: "Ekwipunek" }, { id: "first", name: "Plecak" }, { id: "second", name: "Szafka" }] };
+    makeItem(a, "stored");
+    assert.deepEqual(inventoryState(a, settings).sections.map(s => s.id), ["first", "second", "carried"]);
+    await moveSection(a, "second", "up");
+    assert.deepEqual(inventoryState(a, settings).sections.map(s => s.id), ["second", "first", "carried"]);
+    await moveSection(a, "first", "down");
+    await moveSection(a, "carried", "up");
+    assert.deepEqual(inventoryState(a, settings).sections.map(s => s.id), ["second", "first", "carried"]);
+    await addSection(a, "Nowa sekcja");
+    assert.equal(inventoryState(a, settings).sections.at(-1).id, "carried");
+    assert.equal(inventoryState(a, settings).placements[0].sectionId, "carried");
+    assert.equal(a.items.size, 1);
+  }],
+  ["actor and vehicle arrows persist each user's order, keeping the selected inventory last", async ({ a, b }) => {
+    const c = new FakeActor("C");
+    const d = new FakeActor("D", "vehicle");
+    game.actors.set(c.id, c);
+    game.actors.set(d.id, d);
+    await game.user.setFlag(MODULE_ID, "inventoryActors", [b.id, c.id, d.id, a.id]);
+    const order = () => orderedInventories([...game.actors].filter(actor => actor.isOwner), game.user.getFlag(MODULE_ID, "inventoryActors"), a.id).map(actor => actor.id);
+    assert.deepEqual(order(), ["B", "C", "D", "A"]);
+    await moveInventory(c.id, "up", a.id);
+    assert.deepEqual(order(), ["C", "B", "D", "A"]);
+    await moveInventory(d.id, "down", a.id);
+    await moveInventory(a.id, "up", a.id);
+    assert.deepEqual(order(), ["C", "B", "D", "A"]);
+    await moveInventory(c.id, "down", a.id);
+    assert.deepEqual(order(), ["B", "C", "D", "A"]);
+    b.isOwner = false;
+    assert.deepEqual(order(), ["C", "D", "A"]);
   }],
   ["knife and armor have independent configurable slots", async ({ a, settings }) => {
     const knife = makeItem(a, "knife", "Nóż");
@@ -278,6 +397,35 @@ const cases = [
     assert.equal(a.weaponRoll(weapon, a.uuid), false);
     assert.equal(calls.roll.length, 1);
   }],
+  ["Punch alone bypasses equipment checks for macros, actor checks and sheet attacks", ({ a, settings }) => {
+    const punch = makeItem(a, "unarmedPunch", "Punch");
+    installWeaponGuard();
+    const event = { shiftKey: true, preventDefault() {} };
+    assert.equal(game.CoC7.macros.weaponCheck({ uuid: punch.uuid, name: punch.name }, event), "rolled");
+    assert.equal(game.CoC7.macros.weaponCheck({ name: "Punch" }, event), "rolled");
+    assert.equal(a.weaponCheck({ uuid: punch.uuid }), "rolled");
+    assert.equal(a.weaponRoll(punch, a.uuid), "rolled");
+    assert.equal(calls.macro.length, 2);
+    assert.equal(calls.actor[0].fastForward, true);
+    assert.equal(calls.roll.length, 1);
+    assert.equal(calls.warnings.length, 0);
+    assert.equal(equippedWeapon(a, { uuid: punch.uuid }, settings), null);
+    assert.equal(equipmentSummary(a, settings).count, 0);
+  }],
+  ["Punch exception does not allow other names, spoofed macro names or stale UUIDs", ({ a }) => {
+    installWeaponGuard();
+    for (const name of ["punch", "PUNCH", "Punch (unarmed)", "Kick", "Bite", "Rewolwer"]) {
+      const weapon = makeItem(a, `other${a.items.size}`, name);
+      assert.equal(a.weaponCheck({ uuid: weapon.uuid, name: "Punch" }), false);
+      assert.equal(a.weaponRoll(weapon, a.uuid), false);
+    }
+    const punch = makeItem(a, "punch", "Punch");
+    const event = { shiftKey: false, preventDefault() {} };
+    assert.equal(game.CoC7.macros.weaponCheck({ uuid: "Actor.A.Item.deleted", name: punch.name }, event), false);
+    assert.equal(calls.macro.length, 0);
+    assert.equal(calls.actor.length, 0);
+    assert.equal(calls.roll.length, 0);
+  }],
   ["sheet guards still install when the macro API is unavailable", async () => {
     class ActorWithoutMacro extends FakeActor {
       weaponCheck() { throw new Error("Unequipped weaponCheck must not run"); }
@@ -387,7 +535,7 @@ const cases = [
 
     // Read the browser drag data synchronously, before the native event protects it.
     await addSection(a, "Plecak");
-    const sectionId = inventoryState(a, settings).sections[1].id;
+    const sectionId = inventoryState(a, settings).sections.find(section => section.id !== "carried").id;
     const listeners = new Map();
     const html = { find(selector) {
       return { on(event, callback) { listeners.set(`${selector}:${event}`, callback); return this; } };
@@ -428,6 +576,18 @@ const cases = [
     assert.equal(form.draft.catalog[0].weight, 0);
     assert.equal(form.draft.slots.weapon, 3);
     assert.equal(settings.slots.weapon, 2); // Import changes the draft until Save.
+
+    await equip(a, item, "gear");
+    await game.user.setFlag(MODULE_ID, "inventoryActors", ["B"]);
+    data = await hud.getData();
+    assert.equal(data.equippedSummary.weight, "0,25");
+    assert.equal(data.equippedSummary.count, 1);
+    assert.equal(data.equippedGear[0].id, item.id);
+    assert.equal(data.equippedGear[0].totalWeight, "0,25");
+    assert.equal(data.equippedGear[0].equipped, true);
+    assert.deepEqual(data.inventories.map(inventory => inventory.actorId), ["B", "A"]);
+    assert.equal(data.inventories.at(-1).isGeneral, true);
+    assert.equal(data.inventories.at(-1).sections.at(-1).id, "carried");
   }]
 ];
 

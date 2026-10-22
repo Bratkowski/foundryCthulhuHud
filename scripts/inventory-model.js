@@ -2,6 +2,7 @@ export const MODULE_ID = "cthulhu-hud";
 export const DEFAULT_SECTION = "carried";
 export const PHYSICAL_TYPES = new Set(["item", "weapon", "armor", "book"]);
 export const SLOT_TYPES = ["weapon", "knife", "armor"];
+export const EQUIPMENT_TYPES = [...SLOT_TYPES, "gear"];
 export const DEFAULT_SLOTS = { weapon: 4, knife: 1, armor: 1 };
 
 export function isInventoryActor(actor) {
@@ -42,12 +43,13 @@ export function capacity(actor) {
 
 export function inventoryState(actor, config) {
   const stored = actor.getFlag(MODULE_ID, "inventory") ?? {};
-  const sections = [{ id: DEFAULT_SECTION, name: "Ekwipunek" }];
+  const sections = [];
   for (const section of stored.sections ?? []) {
-    if (typeof section.id === "string" && typeof section.name === "string" && !sections.some(s => s.id === section.id)) {
+    if (typeof section.id === "string" && section.id !== DEFAULT_SECTION && typeof section.name === "string" && !sections.some(s => s.id === section.id)) {
       sections.push({ id: section.id, name: section.name });
     }
   }
+  sections.push({ id: DEFAULT_SECTION, name: "Ekwipunek ogólny" });
   const items = actor.items.filter(item => PHYSICAL_TYPES.has(item.type));
   const sectionIds = new Set(sections.map(s => s.id));
   const placements = items.map(item => ({
@@ -65,19 +67,54 @@ export function inventoryState(actor, config) {
       return id;
     });
   }
+  equipped.gear = Array.from(stored.equipped?.gear ?? []).filter(id => {
+    const item = items.find(i => i.id === id);
+    if (actor.type !== "character" || !item || used.has(id) || quantity(item) <= 0 || itemDefinition(item, config).kind !== "gear") return false;
+    used.add(id);
+    return true;
+  });
   return { sections, placements, equipped };
 }
 
-export function inventorySummary(actor, config) {
+export function equippedIds(state) {
+  return new Set(EQUIPMENT_TYPES.flatMap(kind => state.equipped[kind]).filter(Boolean));
+}
+
+export function inventorySummary(actor, config, { equippedOnly = false } = {}) {
+  const equipped = equippedOnly ? equippedIds(inventoryState(actor, config)) : null;
   let weight = 0;
   let unknown = 0;
-  for (const item of actor.items.filter(i => PHYSICAL_TYPES.has(i.type) && quantity(i) > 0)) {
+  let count = 0;
+  for (const item of actor.items.filter(i => PHYSICAL_TYPES.has(i.type) && quantity(i) > 0 && (!equipped || equipped.has(i.id)))) {
     const definition = itemDefinition(item, config);
+    count += quantity(item);
     if (definition.weight == null) unknown++;
     else weight += definition.weight * quantity(item);
   }
   const limit = capacity(actor);
-  return { weight, unknown, limit, overloaded: limit !== null && weight > limit };
+  return { weight, unknown, count, limit, overloaded: limit !== null && weight > limit };
+}
+
+export function equipmentSummary(actor, config) {
+  return inventorySummary(actor, config, { equippedOnly: true });
+}
+
+export function reorderIds(ids, id, direction) {
+  const result = [...ids];
+  const index = result.indexOf(id);
+  const offset = direction === "up" ? -1 : direction === "down" ? 1 : 0;
+  const next = index + offset;
+  if (index >= 0 && offset && next >= 0 && next < result.length) {
+    [result[index], result[next]] = [result[next], result[index]];
+  }
+  return result;
+}
+
+export function orderedInventories(actors, attachedIds, selectedActorId) {
+  const byId = new Map(actors.map(actor => [actor.id, actor]));
+  const ids = [...new Set(attachedIds)].filter(id => byId.has(id) && id !== selectedActorId);
+  if (byId.has(selectedActorId)) ids.push(selectedActorId);
+  return ids.map(id => byId.get(id));
 }
 
 // Validate the entire import before changing any world setting.
@@ -125,4 +162,10 @@ export function equippedWeapon(actor, data, config) {
   if (!item || quantity(item) <= 0) return null;
   const state = inventoryState(actor, config);
   return [...state.equipped.weapon, ...state.equipped.knife].includes(item.id) ? item : null;
+}
+
+export function weaponForCheck(actor, data, config) {
+  const item = resolveWeapon(actor, data);
+  if (item?.name === "Punch" && quantity(item) > 0) return item;
+  return equippedWeapon(actor, data, config);
 }

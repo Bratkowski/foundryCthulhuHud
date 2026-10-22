@@ -1,6 +1,6 @@
 import {
-  MODULE_ID, DEFAULT_SECTION, DEFAULT_SLOTS, PHYSICAL_TYPES, SLOT_TYPES,
-  isInventoryActor, inventoryState, itemDefinition, itemKey, quantity, equippedWeapon
+  MODULE_ID, DEFAULT_SECTION, DEFAULT_SLOTS, PHYSICAL_TYPES, SLOT_TYPES, EQUIPMENT_TYPES,
+  isInventoryActor, inventoryState, itemDefinition, itemKey, quantity, weaponForCheck, reorderIds, orderedInventories
 } from "./inventory-model.js";
 
 export function config() {
@@ -38,7 +38,7 @@ export async function addSection(actor, name) {
   name = name.trim();
   if (!name || name.length > 80) throw new Error("Nazwa sekcji musi mieć od 1 do 80 znaków.");
   const state = inventoryState(actor, config());
-  state.sections.push({ id: foundry.utils.randomID(), name });
+  state.sections.splice(state.sections.length - 1, 0, { id: foundry.utils.randomID(), name });
   await saveState(actor, state);
 }
 
@@ -59,6 +59,40 @@ export async function unequip(actor, kind, index) {
   if (!SLOT_TYPES.includes(kind) || !Number.isInteger(index) || index < 0 || index >= state.equipped[kind].length) return;
   state.equipped[kind][index] = null;
   await saveState(actor, state);
+}
+
+export async function unequipGear(actor, itemId) {
+  assertOwner(actor);
+  const state = inventoryState(actor, config());
+  state.equipped.gear = state.equipped.gear.filter(id => id !== itemId);
+  await saveState(actor, state);
+}
+
+export async function moveSection(actor, sectionId, direction) {
+  assertOwner(actor);
+  if (sectionId === DEFAULT_SECTION) return;
+  const state = inventoryState(actor, config());
+  const custom = state.sections.filter(section => section.id !== DEFAULT_SECTION);
+  const order = reorderIds(custom.map(section => section.id), sectionId, direction);
+  state.sections = [...order.map(id => custom.find(section => section.id === id)), state.sections.at(-1)];
+  await saveState(actor, state);
+}
+
+export async function moveInventory(actorId, direction, selectedActorId) {
+  if (actorId === selectedActorId) return;
+  const attached = game.user.getFlag(MODULE_ID, "inventoryActors") ?? [];
+  const visible = orderedInventories(ownedActors(), attached, selectedActorId).filter(actor => actor.id !== selectedActorId);
+  const order = reorderIds(visible.map(actor => actor.id), actorId, direction);
+  if (attached.includes(selectedActorId)) order.push(selectedActorId);
+  await game.user.setFlag(MODULE_ID, "inventoryActors", order);
+}
+
+function putAway(state, itemId) {
+  for (const kind of EQUIPMENT_TYPES) {
+    state.equipped[kind] = kind === "gear"
+      ? state.equipped[kind].filter(id => id !== itemId)
+      : state.equipped[kind].map(id => id === itemId ? null : id);
+  }
 }
 
 function rebindWeaponSkills(itemData, source, destination) {
@@ -91,12 +125,12 @@ export async function dropItem(data, target) {
   const state = inventoryState(destination, settings);
   if (target.kind) {
     const definition = itemDefinition(item, settings);
-    if (destination.type !== "character" || !SLOT_TYPES.includes(target.kind) || definition.kind !== target.kind) {
+    if (destination.type !== "character" || !EQUIPMENT_TYPES.includes(target.kind) || definition.kind !== target.kind) {
       throw new Error("Przedmiot nie pasuje do tego slotu. Kategorię ustawia MG w konfiguracji ekwipunku.");
     }
     if (quantity(item) <= 0) throw new Error("Nie można wyposażyć przedmiotu o zerowej ilości.");
-    if (!Number.isInteger(target.index) || target.index < 0 || target.index >= state.equipped[target.kind].length) throw new Error("Ten slot już nie istnieje.");
-    if (state.equipped[target.kind][target.index] && !(source?.uuid === destination.uuid && state.equipped[target.kind][target.index] === item.id)) {
+    if (target.kind !== "gear" && (!Number.isInteger(target.index) || target.index < 0 || target.index >= state.equipped[target.kind].length)) throw new Error("Ten slot już nie istnieje.");
+    if (target.kind !== "gear" && state.equipped[target.kind][target.index] && !(source?.uuid === destination.uuid && state.equipped[target.kind][target.index] === item.id)) {
       throw new Error("Slot jest zajęty. Najpierw zdejmij wyposażenie przyciskiem ×.");
     }
   } else if (!state.sections.some(section => section.id === target.sectionId)) {
@@ -105,13 +139,14 @@ export async function dropItem(data, target) {
 
   if (source?.uuid === destination.uuid) {
     if (target.kind) {
-      for (const kind of SLOT_TYPES) state.equipped[kind] = state.equipped[kind].map(id => id === item.id ? null : id);
-      state.equipped[target.kind][target.index] = item.id;
+      putAway(state, item.id);
+      if (target.kind === "gear") state.equipped.gear.push(item.id);
+      else state.equipped[target.kind][target.index] = item.id;
     } else {
       state.placements.find(p => p.itemId === item.id).sectionId = target.sectionId;
       // Dropping an equipped tile in a bag explicitly puts it away.
       if (data.fromSlot) {
-        for (const kind of SLOT_TYPES) state.equipped[kind] = state.equipped[kind].map(id => id === item.id ? null : id);
+        putAway(state, item.id);
       }
     }
     await saveState(destination, state);
@@ -127,10 +162,11 @@ export async function dropItem(data, target) {
   if (!created) throw new Error("Nie udało się dodać przedmiotu do docelowego ekwipunku.");
   try {
     const latest = inventoryState(destination, settings);
-    if (target.kind && latest.equipped[target.kind]?.[target.index]) throw new Error("Slot został zajęty podczas przenoszenia.");
+    if (target.kind && target.kind !== "gear" && latest.equipped[target.kind]?.[target.index]) throw new Error("Slot został zajęty podczas przenoszenia.");
     if (!target.kind && !latest.sections.some(section => section.id === target.sectionId)) throw new Error("Sekcja została usunięta podczas przenoszenia.");
     latest.placements.find(p => p.itemId === created.id).sectionId = target.sectionId ?? DEFAULT_SECTION;
-    if (target.kind) latest.equipped[target.kind][target.index] = created.id;
+    if (target.kind === "gear") latest.equipped.gear.push(created.id);
+    else if (target.kind) latest.equipped[target.kind][target.index] = created.id;
     await saveState(destination, latest);
     if (source) {
       const removed = await source.deleteEmbeddedDocuments("Item", [item.id]);
@@ -175,7 +211,7 @@ export function installWeaponGuard() {
     const wrapped = function (data, event, ...args) {
       const actor = speakerActor();
       if (actor?.type !== "character") return original.call(this, data, event, ...args);
-      const weapon = equippedWeapon(actor, data, config());
+      const weapon = weaponForCheck(actor, data, config());
       if (!weapon) {
         event?.preventDefault?.();
         ui.notifications.warn(`${actor.name}: ta broń nie jest wyposażona. Umieść ją w slocie broni lub noża w HUD-zie.`);
@@ -192,7 +228,7 @@ export function installWeaponGuard() {
   if (typeof actorCheck === "function" && !actorCheck[WRAPPED]) {
     const wrapped = function (data, ...args) {
       if (this.type !== "character") return actorCheck.call(this, data, ...args);
-      const weapon = equippedWeapon(this, data, config());
+      const weapon = weaponForCheck(this, data, config());
       if (!weapon) {
         ui.notifications.warn(`${this.name}: ta broń nie jest wyposażona.`);
         return false;
@@ -207,7 +243,7 @@ export function installWeaponGuard() {
   if (typeof actorRoll === "function" && !actorRoll[WRAPPED]) {
     const wrapped = function (weapon, ...args) {
       if (this.type !== "character") return actorRoll.call(this, weapon, ...args);
-      const equipped = equippedWeapon(this, weapon, config());
+      const equipped = weaponForCheck(this, weapon, config());
       if (!equipped) {
         ui.notifications.warn(`${this.name}: ${weapon?.name ?? "ta broń"} nie jest wyposażona. Umieść ją w slocie broni lub noża w HUD-zie.`);
         return false;
