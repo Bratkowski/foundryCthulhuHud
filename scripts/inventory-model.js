@@ -76,9 +76,12 @@ export function inventoryState(actor, config) {
   sections.push({ id: DEFAULT_SECTION, name: "Ekwipunek ogólny" });
   const items = actor.items.filter(item => PHYSICAL_TYPES.has(item.type));
   const sectionIds = new Set(sections.map(s => s.id));
-  const placements = items.map(item => ({
-    itemId: item.id,
-    sectionId: (stored.placements ?? []).find(p => p.itemId === item.id && sectionIds.has(p.sectionId))?.sectionId ?? DEFAULT_SECTION
+  // Placement order is the saved tile order. Append new items without disturbing it.
+  const byId = new Map(items.map(item => [item.id, item]));
+  const orderedIds = [...new Set([...(stored.placements ?? []).map(p => p.itemId), ...byId.keys()])].filter(id => byId.has(id));
+  const placements = orderedIds.map(itemId => ({
+    itemId,
+    sectionId: (stored.placements ?? []).find(p => p.itemId === itemId && sectionIds.has(p.sectionId))?.sectionId ?? DEFAULT_SECTION
   }));
   const used = new Set();
   const equipped = {};

@@ -112,6 +112,35 @@ export async function moveInventory(actorId, direction, selectedActorId) {
   await game.user.setFlag(MODULE_ID, "inventoryActors", order);
 }
 
+export async function reorderItem(actor, itemId, { sectionId, kind, beforeItemId = null }) {
+  assertOwner(actor);
+  const state = inventoryState(actor, config());
+  let ids;
+  if (kind === "gear") ids = state.equipped.gear;
+  else if (!kind && state.sections.some(section => section.id === sectionId)) {
+    ids = state.placements.filter(p => p.sectionId === sectionId).map(p => p.itemId);
+  } else throw new Error("Ten obszar ekwipunku już nie istnieje.");
+  if (!ids.includes(itemId) || (beforeItemId !== null && !ids.includes(beforeItemId))) {
+    throw new Error("Układ ekwipunku zmienił się. Spróbuj ponownie.");
+  }
+  if (beforeItemId === itemId) return;
+  const order = ids.filter(id => id !== itemId);
+  order.splice(beforeItemId === null ? order.length : order.indexOf(beforeItemId), 0, itemId);
+  if (order.every((id, index) => id === ids[index])) return;
+  if (kind === "gear") state.equipped.gear = order;
+  else {
+    const placements = new Map(state.placements.map(p => [p.itemId, p]));
+    let index = 0;
+    state.placements = state.placements.map(p => p.sectionId === sectionId ? placements.get(order[index++]) : p);
+  }
+  await saveState(actor, state);
+  const saved = inventoryState(actor, config());
+  const actual = kind === "gear" ? saved.equipped.gear : saved.placements.filter(p => p.sectionId === sectionId).map(p => p.itemId);
+  if (actual.some((id, index) => id !== order[index]) || actual.length !== order.length) {
+    throw new Error("Zapis kolejności przedmiotów został anulowany.");
+  }
+}
+
 function putAway(state, itemId) {
   for (const kind of EQUIPMENT_TYPES) {
     state.equipped[kind] = kind === "gear"

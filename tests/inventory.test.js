@@ -5,7 +5,7 @@ import {
 } from "../scripts/inventory-model.js";
 import {
   dropItem, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, worldCatalog, installWeaponGuard, editInventory,
-  equipItem, deleteInventoryItem
+  equipItem, deleteInventoryItem, reorderItem
 } from "../scripts/inventory-service.js";
 import { chooseTransferAmount } from "../scripts/inventory-dialogs.js";
 
@@ -117,6 +117,71 @@ async function equip(actor, item, kind = "weapon", index = 0) {
 }
 
 const cases = [
+  ["tile sorting persists section order without splitting stacks or changing equipment", async ({ a, settings }) => {
+    const first = makeItem(a, "first", "Lek", "item", { quantity: 6 });
+    const second = makeItem(a, "second", "Lek", "item", { quantity: 6 });
+    const weapon = makeItem(a, "weapon");
+    await equipItem(weapon);
+    await addSection(a, "Plecak");
+    const bag = inventoryState(a, settings).sections[0].id;
+    const stored = makeItem(a, "stored", "Książka", "book");
+    await dropItem({ type: "Item", uuid: stored.uuid }, { actorUuid: a.uuid, sectionId: bag });
+    await reorderItem(a, weapon.id, { sectionId: "carried", beforeItemId: first.id });
+    let state = inventoryState(a, settings);
+    assert.deepEqual(state.placements.filter(p => p.sectionId === "carried").map(p => p.itemId), [weapon.id, first.id, second.id]);
+    assert.equal(state.equipped.weapon[0], weapon.id);
+    assert.equal(first.system.quantity, 6);
+    assert.equal(second.system.quantity, 6);
+    assert.equal(a.items.size, 4);
+    assert.equal(state.placements.find(p => p.itemId === stored.id).sectionId, bag);
+    await reorderItem(a, weapon.id, { sectionId: "carried" });
+    state = inventoryState(a, settings);
+    assert.deepEqual(state.placements.filter(p => p.sectionId === "carried").map(p => p.itemId), [first.id, second.id, weapon.id]);
+  }],
+  ["saved order survives actor reload and normalizes missing, duplicate and new items", async ({ a, settings }) => {
+    makeItem(a, "a"); makeItem(a, "b"); makeItem(a, "c");
+    await reorderItem(a, "c", { sectionId: "carried", beforeItemId: "a" });
+    const reloaded = new FakeActor(a.id);
+    reloaded.flags = structuredClone(a.flags);
+    for (const id of ["a", "b", "c"]) makeItem(reloaded, id);
+    assert.deepEqual(inventoryState(reloaded, settings).placements.map(p => p.itemId), ["c", "a", "b"]);
+    reloaded.flags.inventory.placements.unshift({ itemId: "deleted", sectionId: "carried" });
+    reloaded.flags.inventory.placements.push({ itemId: "c", sectionId: "carried" });
+    reloaded.items.delete("a");
+    makeItem(reloaded, "new");
+    assert.deepEqual(inventoryState(reloaded, settings).placements.map(p => p.itemId), ["c", "b", "new"]);
+  }],
+  ["vehicle sections and equipped gear support independent saved tile order", async ({ a, b, settings }) => {
+    for (const actor of [a, b]) {
+      for (const id of ["a", "b", "c"]) makeItem(actor, id, id, "item", { quantity: 1 });
+    }
+    for (const item of a.items) await equipItem(item);
+    await reorderItem(a, "c", { kind: "gear", beforeItemId: "b" });
+    assert.deepEqual(inventoryState(a, settings).equipped.gear, ["a", "c", "b"]);
+    assert.deepEqual(inventoryState(a, settings).placements.map(p => p.itemId), ["a", "b", "c"]);
+    await reorderItem(b, "c", { sectionId: "carried", beforeItemId: "a" });
+    assert.deepEqual(inventoryState(b, settings).placements.map(p => p.itemId), ["c", "a", "b"]);
+    const reloaded = new FakeActor(a.id);
+    reloaded.flags = structuredClone(a.flags);
+    for (const id of ["a", "b", "c"]) makeItem(reloaded, id, id, "item", { quantity: 1 });
+    assert.deepEqual(inventoryState(reloaded, settings).equipped.gear, ["a", "c", "b"]);
+  }],
+  ["sorting rejects stale locations, denied ownership and cancelled saves", async ({ a, settings }) => {
+    makeItem(a, "a"); makeItem(a, "b");
+    await addSection(a, "Plecak");
+    const bag = inventoryState(a, settings).sections[0].id;
+    await assert.rejects(reorderItem(a, "a", { sectionId: bag }));
+    await assert.rejects(reorderItem(a, "a", { sectionId: "deleted" }));
+    await assert.rejects(reorderItem(a, "a", { sectionId: "carried", beforeItemId: "deleted" }));
+    await assert.rejects(reorderItem(a, "a", { kind: "weapon" }));
+    await assert.rejects(reorderItem(a, "a", { kind: "gear" }));
+    a.isOwner = false;
+    await assert.rejects(reorderItem(a, "a", { sectionId: "carried" }));
+    a.isOwner = true;
+    a.cancelSave = true;
+    await assert.rejects(reorderItem(a, "a", { sectionId: "carried" }), /anulowany/);
+    assert.deepEqual(inventoryState(a, settings).placements.map(p => p.itemId), ["a", "b"]);
+  }],
   ["menu equipment selects the correct first free slot and respects category overrides", async ({ a, settings }) => {
     const first = makeItem(a, "first");
     await equipItem(first);
@@ -1047,6 +1112,26 @@ const cases = [
     await editInventory(async () => {});
     assert.equal(medicine.system.quantity, 3);
     assert.equal(equipmentSummary(a, settings).weight, 1.75);
+
+    // A sorting drop bypasses the quantity dialog and survives a fresh HUD view.
+    const another = makeItem(a, "sortTarget", "Mapa", "book");
+    const finishPreview = hud.sortPreview.finish.bind(hud.sortPreview);
+    hud.sortPreview.finish = () => ({ uuid: another.uuid, actorUuid: a.uuid, sectionId: "carried", beforeItemId: medicine.id });
+    quantityDialog = null;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    listeners.get(".hud-drop-zone:drop")({
+      preventDefault() {}, stopPropagation() {},
+      currentTarget: { dataset: { actorUuid: a.uuid, sectionId: "carried" }, classList: { remove() {} } },
+      originalEvent: { dataTransfer: { getData: () => JSON.stringify({ type: "Item", uuid: another.uuid }) } }
+    });
+    await editInventory(async () => {});
+    assert.equal(quantityDialog, null);
+    data = await hud.getData();
+    const carried = data.inventories.at(-1).sections.find(section => section.id === "carried").items;
+    assert.deepEqual(carried.map(tile => tile.id), [another.id, medicine.id, wornMedicine.id]);
+    assert.equal(medicine.system.quantity, 3);
+    assert.equal(equipmentSummary(a, settings).weight, 1.75);
+    hud.sortPreview.finish = finishPreview;
   }]
 ];
 

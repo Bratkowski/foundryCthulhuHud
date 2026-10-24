@@ -1,14 +1,15 @@
 import {
   MODULE_ID, DEFAULT_SECTION, DEFAULT_SLOTS, SLOT_TYPES, PHYSICAL_TYPES,
-  inventoryState, inventorySummary, equipmentSummary, equippedIds, orderedInventories, quantity, itemDefinition
+  inventoryState, inventorySummary, equipmentSummary, equippedIds, orderedInventories, quantity, itemDefinition, canStack
 } from "./scripts/inventory-model.js";
 import {
   config, ownedActors, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, dropItem,
-  editInventory, installWeaponGuard, reportError, equipItem, deleteInventoryItem, assertOwner
+  editInventory, installWeaponGuard, reportError, equipItem, deleteInventoryItem, assertOwner, reorderItem
 } from "./scripts/inventory-service.js";
 import { InventoryConfig } from "./scripts/inventory-config.js";
 import { chooseTransferAmount } from "./scripts/inventory-dialogs.js";
 import { showItemMenu, closeItemMenu } from "./scripts/inventory-menu.js";
+import { InventorySortPreview } from "./scripts/inventory-sort.js";
 
 let hudApp = null;
 let tileTemplates;
@@ -75,6 +76,7 @@ class CthulhuHud extends Application {
     this.selectedActorId = game.user.character?.id ?? null;
     this.expanded = false;
     this.busy = false;
+    this.sortPreview = new InventorySortPreview();
   }
 
   static get defaultOptions() {
@@ -117,7 +119,7 @@ class CthulhuHud extends Application {
         ...section, actorUuid: actor.uuid, removable: section.id !== DEFAULT_SECTION,
         canMoveUp: section.id !== DEFAULT_SECTION && index > 0,
         canMoveDown: section.id !== DEFAULT_SECTION && index < state.sections.length - 2,
-        items: items.filter(item => state.placements.find(p => p.itemId === item.id)?.sectionId === section.id)
+        items: state.placements.filter(p => p.sectionId === section.id).map(p => items.find(item => item.id === p.itemId))
           .map(item => this.tile(item, actor, state, settings))
       }))
     };
@@ -209,12 +211,14 @@ class CthulhuHud extends Application {
 
   async close(options) {
     closeItemMenu();
+    this.sortPreview.clear();
     return super.close(options);
   }
 
   activateListeners(html) {
     super.activateListeners(html);
     closeItemMenu();
+    this.sortPreview.clear();
     const root = this.element[0];
     root.classList.toggle("collapsed", !this.expanded);
     root.classList.toggle("expanded", this.expanded);
@@ -301,16 +305,24 @@ class CthulhuHud extends Application {
     });
     html.find(".hud-item-tile").on("dragstart", event => {
       closeItemMenu();
+      if (this.busy) { event.preventDefault(); return; }
       const tile = event.currentTarget;
       const data = { type: "Item", uuid: tile.dataset.uuid, fromSlot: Boolean(tile.closest(".hud-equipped-item")) };
       event.originalEvent.dataTransfer.setData("text/plain", JSON.stringify(data));
       event.originalEvent.dataTransfer.effectAllowed = "copyMove";
+      const actor = ownedActors().find(actor => actor.items.get(tile.dataset.itemId)?.uuid === tile.dataset.uuid);
+      const item = actor?.items.get(tile.dataset.itemId);
+      const mergeableIds = new Set(item ? actor.items.filter(candidate => candidate.id !== item.id && canStack(item, candidate)).map(candidate => candidate.id) : []);
+      this.sortPreview.start(tile, mergeableIds);
     });
+    html.find(".hud-item-tile").on("dragend", () => this.sortPreview.clear());
     html.find(".hud-drop-zone").on("dragover", event => {
       event.preventDefault();
       event.currentTarget.classList.add("is-dragover");
+      this.sortPreview.over(event.currentTarget, event.clientX, event.clientY, event.target);
     }).on("dragleave", event => {
       if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove("is-dragover");
+      this.sortPreview.leave(event.currentTarget, event.relatedTarget);
     }).on("drop", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -318,12 +330,17 @@ class CthulhuHud extends Application {
       const { actorUuid, sectionId, kind, index } = event.currentTarget.dataset;
       const mergeItemId = event.target?.closest(".hud-item-tile")?.dataset.itemId;
       const raw = event.originalEvent.dataTransfer.getData("text/plain");
+      const reorder = this.sortPreview.finish(event.currentTarget);
       run(async () => {
         let data;
         try { data = JSON.parse(raw); }
         catch { throw new Error("Nieprawidłowe dane przeciąganego przedmiotu."); }
         const item = data.type === "Item" && data.uuid ? await fromUuid(data.uuid) : null;
         if (!item || !PHYSICAL_TYPES.has(item.type)) throw new Error("Przeciągnij przedmiot z ekwipunku.");
+        if (reorder?.uuid === item.uuid) {
+          await reorderItem(await fromUuid(reorder.actorUuid), item.id, reorder);
+          return;
+        }
         const expectedQuantity = quantity(item);
         const amount = await chooseTransferAmount(item);
         if (amount === null) return;
