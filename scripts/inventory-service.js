@@ -73,6 +73,26 @@ export async function unequipGear(actor, itemId) {
   await saveState(actor, state);
 }
 
+export async function equipItem(item, actor = item?.parent, options = {}) {
+  assertOwner(actor);
+  if (actor.type !== "character") throw new Error("Wyposażenie wymaga postaci.");
+  const settings = config();
+  const state = inventoryState(actor, settings);
+  if (item?.parent?.uuid === actor.uuid && equippedIds(state).has(item.id)) return item;
+  const kind = itemDefinition(item, settings).kind;
+  const index = kind === "gear" ? undefined : state.equipped[kind]?.indexOf(null);
+  if (kind !== "gear" && !(index >= 0)) throw new Error("Brak wolnego slotu tej kategorii. Najpierw zdejmij wyposażony przedmiot.");
+  return dropItem({ type: "Item", uuid: item.uuid }, { ...options, actorUuid: actor.uuid, kind, index });
+}
+
+export async function deleteInventoryItem(actor, itemId) {
+  assertOwner(actor);
+  const item = actor.items.get(itemId);
+  if (!item || !PHYSICAL_TYPES.has(item.type)) throw new Error("Ten przedmiot nie jest już dostępny w ekwipunku.");
+  await removeItem(actor, itemId);
+  // inventoryState filters deleted IDs from both placements and equipment.
+}
+
 export async function moveSection(actor, sectionId, direction) {
   assertOwner(actor);
   if (sectionId === DEFAULT_SECTION) return;
@@ -170,7 +190,7 @@ async function restoreQuantity(item, value) {
 
 async function removeItem(actor, itemId) {
   const removed = await actor.deleteEmbeddedDocuments("Item", [itemId]);
-  if (!removed.some(item => item.id === itemId) || actor.items.get(itemId)) throw new Error("Usunięcie źródłowego stosu zostało anulowane.");
+  if (!removed.some(item => item.id === itemId) || actor.items.get(itemId)) throw new Error("Usunięcie przedmiotu zostało anulowane.");
 }
 
 async function consumeSource(item, amount, available, progress) {

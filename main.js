@@ -4,10 +4,11 @@ import {
 } from "./scripts/inventory-model.js";
 import {
   config, ownedActors, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, dropItem,
-  editInventory, installWeaponGuard, reportError
+  editInventory, installWeaponGuard, reportError, equipItem, deleteInventoryItem, assertOwner
 } from "./scripts/inventory-service.js";
 import { InventoryConfig } from "./scripts/inventory-config.js";
 import { chooseTransferAmount } from "./scripts/inventory-dialogs.js";
+import { showItemMenu, closeItemMenu } from "./scripts/inventory-menu.js";
 
 let hudApp = null;
 let tileTemplates;
@@ -162,8 +163,58 @@ class CthulhuHud extends Application {
     };
   }
 
+  itemContextEntries(item, run) {
+    const withItem = action => async () => {
+      const current = await fromUuid(item.uuid);
+      if (!current || !PHYSICAL_TYPES.has(current.type)) throw new Error("Ten przedmiot nie jest już dostępny w ekwipunku.");
+      assertOwner(current.parent);
+      return action(current);
+    };
+    const entries = [{
+      label: "Edytuj", icon: "fa-pen-to-square",
+      action: withItem(current => current.sheet.render(true))
+    }, {
+      label: "Usuń", icon: "fa-trash", danger: true,
+      action: () => run(withItem(current => deleteInventoryItem(current.parent, current.id)))
+    }];
+    const equipmentActor = item.parent.type === "character" ? item.parent : game.actors.get(this.selectedActorId);
+    if (!equippedIds(inventoryState(item.parent, config())).has(item.id) && equipmentActor?.type === "character" && equipmentActor.isOwner) {
+      const actorUuid = equipmentActor.uuid;
+      entries.push({
+        label: "Wyposaż", icon: "fa-hand",
+        action: () => run(withItem(async current => {
+          const expectedQuantity = quantity(current);
+          const amount = await chooseTransferAmount(current);
+          if (amount !== null) await equipItem(current, await fromUuid(actorUuid), { amount, expectedQuantity });
+        }))
+      });
+    }
+    const destinations = ownedActors().filter(actor => actor.uuid !== item.parent.uuid);
+    entries.push({
+      label: "Przenieś do ekwipunku", icon: "fa-right-left",
+      children: destinations.length ? destinations.map(actor => ({
+        label: `${actor.name} (${actor.type === "vehicle" ? "pojazd" : "postać"})`,
+        icon: actor.type === "vehicle" ? "fa-car" : "fa-user",
+        action: () => run(withItem(async current => {
+          const expectedQuantity = quantity(current);
+          const amount = await chooseTransferAmount(current);
+          if (amount !== null) await dropItem({ type: "Item", uuid: current.uuid }, {
+            actorUuid: actor.uuid, sectionId: DEFAULT_SECTION, amount, expectedQuantity
+          });
+        }))
+      })) : [{ label: "Brak dostępnych ekwipunków", disabled: true }]
+    });
+    return entries;
+  }
+
+  async close(options) {
+    closeItemMenu();
+    return super.close(options);
+  }
+
   activateListeners(html) {
     super.activateListeners(html);
+    closeItemMenu();
     const root = this.element[0];
     root.classList.toggle("collapsed", !this.expanded);
     root.classList.toggle("expanded", this.expanded);
@@ -180,7 +231,7 @@ class CthulhuHud extends Application {
     const run = action => {
       if (this.busy) return;
       this.busy = true;
-      editInventory(action).catch(reportError).finally(() => { this.busy = false; refreshHud(); });
+      return editInventory(action).catch(reportError).finally(() => { this.busy = false; refreshHud(); });
     };
     html.find("[data-action='attach-inventory']").on("click", () => run(async () => {
       const id = html.find("[name='inventory-actor']").val();
@@ -232,7 +283,24 @@ class CthulhuHud extends Application {
         if (item?.isOwner) item.sheet.render(true);
       } catch (error) { reportError(error); }
     });
+    html.find(".hud-item-tile").on("contextmenu", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const anchor = event.currentTarget;
+      const rect = anchor.getBoundingClientRect();
+      const x = event.clientX || rect.left;
+      const y = event.clientY || rect.bottom;
+      closeItemMenu();
+      if (this.busy) return;
+      try {
+        const item = await fromUuid(anchor.dataset.uuid);
+        if (!item || !PHYSICAL_TYPES.has(item.type) || !anchor.isConnected) return;
+        assertOwner(item.parent);
+        showItemMenu({ anchor, x, y, entries: this.itemContextEntries(item, run), onError: reportError });
+      } catch (error) { reportError(error); }
+    });
     html.find(".hud-item-tile").on("dragstart", event => {
+      closeItemMenu();
       const tile = event.currentTarget;
       const data = { type: "Item", uuid: tile.dataset.uuid, fromSlot: Boolean(tile.closest(".hud-equipped-item")) };
       event.originalEvent.dataTransfer.setData("text/plain", JSON.stringify(data));

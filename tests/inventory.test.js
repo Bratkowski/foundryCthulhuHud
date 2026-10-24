@@ -4,7 +4,8 @@ import {
   inventorySummary, equipmentSummary, orderedInventories, validateConfig, equippedWeapon, canStack, quantity
 } from "../scripts/inventory-model.js";
 import {
-  dropItem, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, worldCatalog, installWeaponGuard, editInventory
+  dropItem, addSection, removeSection, moveSection, moveInventory, unequip, unequipGear, worldCatalog, installWeaponGuard, editInventory,
+  equipItem, deleteInventoryItem
 } from "../scripts/inventory-service.js";
 import { chooseTransferAmount } from "../scripts/inventory-dialogs.js";
 
@@ -116,6 +117,67 @@ async function equip(actor, item, kind = "weapon", index = 0) {
 }
 
 const cases = [
+  ["menu equipment selects the correct first free slot and respects category overrides", async ({ a, settings }) => {
+    const first = makeItem(a, "first");
+    await equipItem(first);
+    const second = makeItem(a, "second");
+    await equipItem(second);
+    const knife = makeItem(a, "knife", "Nóż");
+    await equipItem(knife);
+    const armor = makeItem(a, "armor", "Kamizelka", "item");
+    settings.catalog.push({ ...itemDefinition(armor, settings), kind: "armor" });
+    await equipItem(armor);
+    const book = makeItem(a, "book", "Dziennik", "book");
+    await equipItem(book);
+    const state = inventoryState(a, settings);
+    assert.deepEqual(state.equipped.weapon, [first.id, second.id, null, null]);
+    assert.deepEqual(state.equipped.knife, [knife.id]);
+    assert.deepEqual(state.equipped.armor, [armor.id]);
+    assert.deepEqual(state.equipped.gear, [book.id]);
+    const extraKnife = makeItem(a, "extraKnife", "Sztylet");
+    await assert.rejects(equipItem(extraKnife), /Brak wolnego slotu/);
+    assert.deepEqual(inventoryState(a, settings).equipped.knife, [knife.id]);
+    await equipItem(first);
+    assert.deepEqual(inventoryState(a, settings).equipped.weapon, state.equipped.weapon);
+    settings.slots.weapon = 0;
+    await assert.rejects(equipItem(first), /Brak wolnego slotu/);
+  }],
+  ["menu equipment can take part of a vehicle stack and rejects stale quantities", async ({ a, b, settings }) => {
+    const medicine = makeItem(b, "medicine", "Lek", "item", { quantity: 6 });
+    await equipItem(medicine, a, { amount: 2, expectedQuantity: 6 });
+    assert.equal(medicine.system.quantity, 4);
+    const wornId = inventoryState(a, settings).equipped.gear[0];
+    assert.equal(a.items.get(wornId).system.quantity, 2);
+    await assert.rejects(equipItem(medicine, a, { amount: 1, expectedQuantity: 6 }));
+    assert.equal(medicine.system.quantity, 4);
+    await assert.rejects(equipItem(medicine, b), /Wyposażenie wymaga postaci/);
+    a.isOwner = false;
+    await assert.rejects(equipItem(medicine, a));
+    assert.equal(b.items.has(medicine.id), true);
+  }],
+  ["menu deletion removes equipped stacks and preserves items when denied or cancelled", async ({ a, settings }) => {
+    const gear = makeItem(a, "gear", "Lek", "item", { quantity: 6 });
+    await equipItem(gear);
+    const weapon = makeItem(a, "weapon");
+    await equipItem(weapon);
+    await deleteInventoryItem(a, gear.id);
+    await deleteInventoryItem(a, weapon.id);
+    assert.equal(a.items.size, 0);
+    const state = inventoryState(a, settings);
+    assert.deepEqual(state.equipped.gear, []);
+    assert.deepEqual(state.equipped.weapon, [null, null, null, null]);
+    assert.deepEqual(state.placements, []);
+    const skill = makeItem(a, "skill", "Unik", "skill");
+    await assert.rejects(deleteInventoryItem(a, skill.id));
+    const spare = makeItem(a, "spare");
+    a.isOwner = false;
+    await assert.rejects(deleteInventoryItem(a, spare.id));
+    a.isOwner = true;
+    a.cancelDelete = true;
+    await assert.rejects(deleteInventoryItem(a, spare.id));
+    assert.equal(a.items.has(spare.id), true);
+    assert.equal(a.items.has(skill.id), true);
+  }],
   ["capacity uses STR and SIZ and does not assign a character limit to vehicles", ({ a, b }) => {
     assert.equal(capacity(a), 28);
     a.system.characteristics.str.value = 40;
@@ -806,7 +868,7 @@ const cases = [
     await second;
     assert.deepEqual(order, [1, 2]);
   }],
-  ["HUD registers token controls in V12 and V13, refreshes inventory and reads configuration", async ({ a, settings }) => {
+  ["HUD registers token controls in V12 and V13, refreshes inventory and reads configuration", async ({ a, b, settings }) => {
     const handlers = new Map();
     const menus = {};
     const documents = [];
@@ -861,6 +923,38 @@ const cases = [
       return { on(event, callback) { listeners.set(`${selector}:${event}`, callback); return this; } };
     } };
     hud.activateListeners(html);
+    assert.equal(typeof listeners.get(".hud-item-tile:contextmenu"), "function");
+    let sheetOpens = 0;
+    item.sheet = { render(force) { assert.equal(force, true); sheetOpens++; } };
+    await listeners.get(".hud-item-tile:dblclick")({ currentTarget: { dataset: { uuid: item.uuid } } });
+    const runMenuAction = action => editInventory(action);
+    let entries = hud.itemContextEntries(item, runMenuAction);
+    await entries.find(entry => entry.label === "Edytuj").action();
+    assert.equal(sheetOpens, 2);
+    assert.ok(entries.some(entry => entry.label === "Wyposaż"));
+    const hiddenActor = new FakeActor("hidden");
+    const lockedActor = new FakeActor("locked");
+    lockedActor.isOwner = false;
+    game.actors.set(hiddenActor.id, hiddenActor);
+    game.actors.set(lockedActor.id, lockedActor);
+    entries = hud.itemContextEntries(item, runMenuAction);
+    const destinations = entries.find(entry => entry.children).children;
+    assert.deepEqual(destinations.map(entry => entry.label), ["B (pojazd)", "hidden (postać)"]);
+    const transferable = makeItem(a, "contextTransfer");
+    await hud.itemContextEntries(transferable, runMenuAction).find(entry => entry.children).children[0].action();
+    assert.equal(a.items.has(transferable.id), false);
+    const transferred = b.items.find(entry => entry.name === transferable.name);
+    assert.equal(transferred?.type, "weapon");
+    await deleteInventoryItem(b, transferred.id);
+    const deletable = makeItem(a, "contextDelete");
+    await hud.itemContextEntries(deletable, runMenuAction).find(entry => entry.label === "Usuń").action();
+    assert.equal(a.items.has(deletable.id), false);
+    const gearForMenu = makeItem(a, "contextEquip", "Kompas", "item");
+    await hud.itemContextEntries(gearForMenu, runMenuAction).find(entry => entry.label === "Wyposaż").action();
+    assert.ok(!hud.itemContextEntries(gearForMenu, runMenuAction).some(entry => entry.label === "Wyposaż"));
+    await deleteInventoryItem(a, gearForMenu.id);
+    game.actors.delete(hiddenActor.id);
+    game.actors.delete(lockedActor.id);
     let readable = true;
     listeners.get(".hud-drop-zone:drop")({
       preventDefault() {}, stopPropagation() {},

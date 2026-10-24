@@ -86,6 +86,16 @@
 .hud-transfer-form p { margin: 0; }
 .hud-transfer-form label { display: flex; align-items: center; gap: 10px; }
 .cthulhu-quantity-dialog input { flex: 1; color: #eee; background: var(--hud-panel); border: 1px solid var(--hud-border); }
+.cthulhu-item-menu { position: fixed; z-index: 10000; width: max-content; max-width: calc(100vw - 8px); color: #eee; font-size: 13px; }
+.cthulhu-item-menu .hud-context-panel { display: flex; flex-direction: column; width: max-content; min-width: min(220px, calc(100vw - 8px)); max-width: min(340px, calc(100vw - 8px)); max-height: calc(100vh - 8px); overflow-y: auto; padding: 4px; border: 1px solid #4b6260; border-radius: 5px; background: #252d2e; box-shadow: 0 5px 18px #0009; }
+.cthulhu-item-menu .hud-context-submenu { position: fixed; }
+.cthulhu-item-menu button { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; width: 100%; margin: 0; padding: 7px 10px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit; font: inherit; text-align: left; line-height: 1.4; box-shadow: none; cursor: pointer; }
+.cthulhu-item-menu button > i { flex: 0 0 16px; text-align: center; }
+.cthulhu-item-menu button > span { overflow-wrap: anywhere; }
+.cthulhu-item-menu button:hover, .cthulhu-item-menu button:focus-visible { background: #3b5049; border-color: #b5d0b0; outline: none; box-shadow: none; }
+.cthulhu-item-menu button.is-danger { color: #ffb0a4; }
+.cthulhu-item-menu button:disabled { color: #aab5b1; cursor: default; background: transparent; border-color: transparent; }
+.cthulhu-item-menu .hud-context-arrow { margin-left: auto; }
 .cthulhu-inventory-config { max-width: calc(100vw - 24px); max-height: calc(100vh - 36px); }
 .cthulhu-inventory-config .window-content { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .inventory-config-form { display: flex; flex: 1 1 auto; flex-direction: column; gap: 10px; min-height: 0; }
